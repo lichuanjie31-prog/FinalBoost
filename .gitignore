@@ -1,0 +1,17 @@
+frontend/node_modules/
+frontend/.npm-cache/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
+backend/.venv/
+backend/.pytest_cache/
+backend/data/
+**/__pycache__/
+.env
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+artifacts/
+resume-clone/
+.claude/
+.workbuddy/

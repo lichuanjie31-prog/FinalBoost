@@ -1,0 +1,31 @@
+{
+  "name": "finalboost-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "test:e2e": "playwright test",
+    "test:failure": "playwright test --config playwright.failure.config.ts",
+    "check:generated": "node ../scripts/verify_generated.mjs",
+    "generate:api": "openapi-typescript ../contracts/openapi.json -o src/api/generated.ts"
+  },
+  "dependencies": {
+    "lucide-react": "1.46.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router-dom": "7.18.4"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "22.20.3",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  }
+}
