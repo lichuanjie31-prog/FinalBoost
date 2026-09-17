@@ -200,4 +200,19 @@ class MockHistoryItem(BaseModel):
     createdAt: float
     submittedAt: float | None = None
     gradedAt: float | None = None
-    gradingId: str | None = None  # 已判卷时为关联的判卷任务 id（用于加载详情）
+
+class MockMistakeItem(BaseModel):
+    """错题集单项：一道学生在最终模拟中失分的题目。"""
+    mockExamId: str
+    examId: str
+    course: str
+    questionId: str
+    prompt: str
+    knowledgePoints: list[str]
+    userAnswer: str  # 学生作答
+    correctAnswer: str  # 标准答案
+    score: float  # 实际得分
+    maxScore: float
+    errorType: str | None = None
+    errorReason: str | None = None
+    gradedAt: float  # 判卷时间（unix 秒），用于排序

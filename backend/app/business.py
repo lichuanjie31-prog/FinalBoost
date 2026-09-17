@@ -12,7 +12,7 @@ from PIL import Image, UnidentifiedImageError
 from .auth import current_user
 from .common import envelope, fail, new_id
 from .idempotency import execute
-from .schemas import Envelope, Page, ExamIn, ExamOut, FileOut, GradingIn, GradingAccepted, GradingOut, DiagnosisIn, DiagnosisOut, MockExamOut, MockExamSubmitIn, MockQuestionPublic, MockHistoryItem
+from .schemas import Envelope, Page, ExamIn, ExamOut, FileOut, GradingIn, GradingAccepted, GradingOut, DiagnosisIn, DiagnosisOut, MockExamOut, MockExamSubmitIn, MockQuestionPublic, MockHistoryItem, MockMistakeItem
 from . import mock_bank
 
 router=APIRouter(prefix="/api/v1",tags=["study"])
@@ -294,14 +294,12 @@ def submit_mock_exam(exam_id:str,mock_exam_id:str,body:MockExamSubmitIn,request:
 def list_mock_history(exam_id:str,request:Request,user=Depends(current_user)):
     """本场考试的全部最终模拟记录（判卷历史），按创建时间倒序。
 
-    已判卷的记录附带最近一次成功判卷的 totalScore 与 gradingId（用于加载逐题详情）。
+    已判卷的记录附带最近一次成功判卷的 totalScore。
     """
     with request.app.state.db.transaction() as db:
         owned(db,"exams",exam_id,user["id"])
         rows=db.execute(
             "SELECT m.id, m.status, m.questions_json, m.created_at, m.submitted_at, m.graded_at,"
-            " (SELECT g.id FROM grading_jobs g WHERE g.mock_exam_id=m.id AND g.status='succeeded'"
-            "  ORDER BY g.created_at DESC LIMIT 1) AS grading_id,"
             " (SELECT g.result_json FROM grading_jobs g WHERE g.mock_exam_id=m.id AND g.status='succeeded'"
             "  ORDER BY g.created_at DESC LIMIT 1) AS result_json"
             " FROM mock_exams m WHERE m.user_id=? AND m.exam_id=? ORDER BY m.created_at DESC, m.id DESC",
@@ -318,6 +316,54 @@ def list_mock_history(exam_id:str,request:Request,user=Depends(current_user)):
                 mockExamId=r["id"],status=r["status"],totalScore=total,
                 maxScore=sum(q["maxScore"] for q in questions),
                 createdAt=r["created_at"],submittedAt=r["submitted_at"],gradedAt=r["graded_at"],
-                gradingId=r["grading_id"],
             ).model_dump())
+        return envelope(items)
+
+
+@router.get("/mock/mistakes",response_model=Envelope[list[MockMistakeItem]])
+def list_mock_mistakes(request:Request,user=Depends(current_user)):
+    """用户全部最终模拟错题集：把所有已成功判卷的 mock 里 score<maxScore 的题目抽出来。
+
+    按判卷时间倒序，方便学生从最近一次的薄弱点开始复盘。
+    """
+    with request.app.state.db.transaction() as db:
+        rows=db.execute(
+            "SELECT g.id AS gid, g.exam_id, g.mock_exam_id, g.created_at AS graded_at,"
+            " g.result_json, m.questions_json, m.answers_json, e.course"
+            " FROM grading_jobs g"
+            " JOIN mock_exams m ON m.id=g.mock_exam_id"
+            " JOIN exams e ON e.id=g.exam_id"
+            " WHERE g.user_id=? AND g.source='mock' AND g.status='succeeded'"
+            " ORDER BY g.created_at DESC, g.id DESC",
+            (user["id"],),
+        ).fetchall()
+        items=[]
+        for r in rows:
+            try:
+                result=json.loads(r["result_json"])
+                questions=json.loads(r["questions_json"])
+                answers=json.loads(r["answers_json"])
+            except (ValueError, TypeError):
+                continue
+            q_lookup={q["questionId"]:q for q in questions}
+            a_lookup={a["questionId"]:a.get("answer","") for a in answers}
+            for gq in result.get("questions",[]):
+                if gq.get("correct") is True: continue
+                q=q_lookup.get(gq["questionId"])
+                if not q: continue
+                items.append(MockMistakeItem(
+                    mockExamId=r["mock_exam_id"],
+                    examId=r["exam_id"],
+                    course=r["course"],
+                    questionId=gq["questionId"],
+                    prompt=q.get("prompt",""),
+                    knowledgePoints=q.get("knowledgePoints",[]),
+                    userAnswer=a_lookup.get(gq["questionId"],""),
+                    correctAnswer=q.get("correctAnswer",""),
+                    score=float(gq.get("score",0)),
+                    maxScore=float(gq.get("maxScore",q.get("maxScore",0))),
+                    errorType=gq.get("errorType"),
+                    errorReason=gq.get("errorReason"),
+                    gradedAt=float(r["graded_at"]),
+                ).model_dump())
         return envelope(items)

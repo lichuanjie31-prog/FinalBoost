@@ -37,7 +37,21 @@ export type MockHistoryItem = {
   createdAt: number
   submittedAt?: number | null
   gradedAt?: number | null
-  gradingId?: string | null
+}
+export type MockMistakeItem = {
+  mockExamId: string
+  examId: string
+  course: string
+  questionId: string
+  prompt: string
+  knowledgePoints: string[]
+  userAnswer: string
+  correctAnswer: string
+  score: number
+  maxScore: number
+  errorType?: string | null
+  errorReason?: string | null
+  gradedAt: number
 }
 
 async function allPages<T>(path: string, signal?: AbortSignal): Promise<T[]> {
@@ -75,4 +89,6 @@ export const study = {
     post<components['schemas']['GradingAccepted']>('/grading', { examId, mockExamId }, key),
   // 判卷历史：本场考试全部最终模拟记录（新→旧）
   mockHistory: (examId: string, signal?: AbortSignal) => request<MockHistoryItem[]>(`/exams/${examId}/mock-history`, { signal }),
+  // 错题集：用户全部已判卷错题（按判卷时间倒序）
+  mockMistakes: (signal?: AbortSignal) => request<MockMistakeItem[]>('/mock/mistakes', { signal }),
 }

@@ -1,26 +1,25 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
-import { ArrowRight, CheckCircle2, ChevronDown, ClipboardList, Clock, History, ScanLine, Target, X } from 'lucide-react'
+import { ArrowRight, BookX, CheckCircle2, ClipboardList, Clock, History, ScanLine, Target, X } from 'lucide-react'
 import { ErrorMessage, MockNotice } from '../../components/Shared'
-import { study, type Exam, type Grading, type MockExam, type MockHistoryItem, type MockQuestion } from '../../api/study'
-import { QuestionScores } from './QuestionScores'
+import { study, type Exam, type Grading, type MockExam, type MockHistoryItem, type MockMistakeItem, type MockQuestion, type MockStudentAnswer } from '../../api/study'
 
 // 5 状态进度条（UI 状态机）
 //   ready 之前（创建中）→ ready（就绪）→ 作答中（前端本地） → submitted（判卷中） → graded（结果）
-type Phase = 'creating' | 'ready' | 'answering' | 'grading' | 'result' | 'failed'
+type Phase = 'creating' | 'ready' | 'answering' | 'grading' | 'result' | 'graded' | 'failed'
 const PHASES: { key: Phase; label: string }[] = [
   { key: 'creating',  label: '列表创建' },
   { key: 'ready',     label: '就绪' },
   { key: 'answering', label: '作答中' },
   { key: 'grading',   label: '判卷中' },
-  { key: 'result',    label: '结果' },
+  { key: 'graded',    label: '已完成' },
 ]
-
-function currentPhaseIndex(mock: MockExam | null, working: boolean, failed: boolean, done: boolean): number {
-  if (failed) return -1
-  if (mock === null) return 0 // 还在创建
-  if (done) return 4 // 判卷任务已 succeeded（即使 mock 状态还没刷新过来）
-  if (mock.status === 'ready') return working ? 2 : 1
+function currentPhaseIndex(
+  mock: MockExam | null, isAnswering: boolean, isFailed: boolean, gradingSucceeded: boolean,
+): number {
+  if (isFailed) return 3
+  if (!mock) return 0
+  if (mock.status === 'ready') return isAnswering ? 2 : 1
   if (mock.status === 'submitted') return 3
   return 4 // graded
 }
@@ -39,23 +38,21 @@ export function MockExam() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState<MockHistoryItem[] | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
-  // 详情：每条已判卷的详情按 gradingId 缓存，避免重复拉取
-  const [detailCache, setDetailCache] = useState<Record<string, Grading>>({})
-  const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({})
-  const [detailError, setDetailError] = useState<Record<string, string>>({})
-  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
+  // 错题集弹层
+  const [mistakesOpen, setMistakesOpen] = useState(false)
+  const [mistakes, setMistakes] = useState<MockMistakeItem[] | null>(null)
+  const [mistakesLoading, setMistakesLoading] = useState(false)
   const intent = useRef(crypto.randomUUID())
-  const answersRef = useRef(answers); answersRef.current = answers
 
-  // 初始加载：先拉考试 + 创建/复用 mock_exam
   useEffect(() => {
     const controller = new AbortController()
-    setLoading(true); setError('')
     ;(async () => {
       try {
-        const e = await study.exam(id, controller.signal); setExam(e)
-        // 创建 mock（幂等）
-        const m = await study.createMock(id, intent.current)
+        const e = await study.exam(id, controller.signal)
+        if (controller.signal.aborted) return
+        setExam(e)
+
+        const m = await study.createMock(id, intent.current, false)
         if (!controller.signal.aborted) {
           setMock(m)
           // 如果已 graded，附带 gradingId 直接拉详情
@@ -68,47 +65,23 @@ export function MockExam() {
           } else {
             setPhase('ready')
           }
-          // 回填学生已作答的答案
-          const existing: Record<string, string> = {}
-          for (const q of m.questions) if (q.studentAnswer !== undefined) existing[q.questionId] = q.studentAnswer
-          setAnswers(existing)
+          // 加载作答（如果有）
+          const allAnswers: Record<string, string> = {}
+          for (const q of m.questions) if (q.studentAnswer) allAnswers[q.questionId] = q.studentAnswer
+          setAnswers(allAnswers)
         }
-      } catch (e) { if (!controller.signal.aborted) setError((e as Error).message) }
-      finally { if (!controller.signal.aborted) setLoading(false) }
+      } catch (e) {
+        if (!controller.signal.aborted) setError((e as Error).message)
+      } finally {
+        if (!controller.signal.aborted) setLoading(false)
+      }
     })()
     return () => controller.abort()
   }, [id])
 
-  // 轮询 grading job
-  useEffect(() => {
-    if (!grading || (grading.status !== 'queued' && grading.status !== 'running')) return
-    const controller = new AbortController()
-    let timer: ReturnType<typeof setTimeout>
-    timer = setTimeout(async function poll() {
-      try {
-        const g = await study.grading(grading.gradingId, controller.signal)
-        if (!controller.signal.aborted) {
-          setGrading(g)
-          if (g.status === 'succeeded') {
-            // 注意：这里不能传 controller.signal——setGrading 会让本 effect 重跑，
-            // cleanup 会 abort 这个 controller，把紧接着的这次拉取自己取消掉（竞态）
-            const m = mock ? await study.getMock(id, mock.mockExamId).catch(() => null) : null
-            if (m) setMock(m)
-            setPhase('result')
-            return
-          }
-          if (g.status === 'failed') { setPhase('failed'); setError(g.error?.message || '判卷失败'); return }
-        }
-      } catch (e) { if (!controller.signal.aborted) setError((e as Error).message) }
-      if (!controller.signal.aborted) timer = setTimeout(poll, 1500)
-    }, 1500)
-    return () => { controller.abort(); clearTimeout(timer) }
-  }, [grading, id, mock])
-
-  function selectAnswer(questionId: string, value: string) {
-    if (mock?.status !== 'ready') return
+  function selectAnswer(questionId: string, answer: string) {
+    setAnswers(prev => ({ ...prev, [questionId]: answer }))
     setPhase('answering')
-    setAnswers(old => ({ ...old, [questionId]: value }))
   }
 
   function jumpToQuestion(questionId: string) {
@@ -125,11 +98,11 @@ export function MockExam() {
     if (!mock) return
     setBusy(true); setError('')
     try {
-      const payload = mock.questions.map(q => ({ questionId: q.questionId, answer: answers[q.questionId] || '' }))
-      const unanswered = payload.filter(a => !a.answer.trim()).length
-      if (unanswered > 0) {
-        setError(`还有 ${unanswered} 道题未作答，请补齐后提交`)
-        setBusy(false); return
+      const payload: MockStudentAnswer[] = Object.entries(answers)
+        .filter(([, v]) => (v || '').trim())
+        .map(([questionId, answer]) => ({ questionId, answer }))
+      if (payload.length !== mock.questions.length) {
+        setError('还有题目未作答'); setBusy(false); return
       }
       const result = await study.submitMock(id, mock.mockExamId, payload, crypto.randomUUID())
       setMock(result); setPhase('grading')
@@ -168,7 +141,7 @@ export function MockExam() {
   }
 
   async function openHistory() {
-    setHistoryOpen(true); setHistoryLoading(true); setExpandedHistoryId(null)
+    setHistoryOpen(true); setHistoryLoading(true)
     try {
       // 不传 abort signal：弹层开关由 state 控制，拉取结果直接落地
       const items = await study.mockHistory(id)
@@ -177,22 +150,13 @@ export function MockExam() {
     finally { setHistoryLoading(false) }
   }
 
-  async function toggleHistoryDetail(item: MockHistoryItem) {
-    if (item.status !== 'graded' || !item.gradingId) return
-    // 切换展开：再点一次收起
-    setExpandedHistoryId(prev => prev === item.mockExamId ? null : item.mockExamId)
-    // 已缓存则不重拉
-    if (detailCache[item.gradingId]) return
-    setDetailLoading(prev => ({ ...prev, [item.gradingId!]: true }))
-    setDetailError(prev => ({ ...prev, [item.gradingId!]: '' }))
+  async function openMistakes() {
+    setMistakesOpen(true); setMistakesLoading(true)
     try {
-      const g = await study.grading(item.gradingId)
-      setDetailCache(prev => ({ ...prev, [item.gradingId!]: g }))
-    } catch (e) {
-      setDetailError(prev => ({ ...prev, [item.gradingId!]: (e as Error).message }))
-    } finally {
-      setDetailLoading(prev => ({ ...prev, [item.gradingId!]: false }))
-    }
+      const items = await study.mockMistakes()
+      setMistakes(items)
+    } catch { setMistakes([]) }
+    finally { setMistakesLoading(false) }
   }
 
   function fmtTime(ts?: number | null) {
@@ -206,6 +170,14 @@ export function MockExam() {
   const phaseIdx = currentPhaseIndex(mock, phase === 'answering', phase === 'failed', grading?.status === 'succeeded')
   const allAnswered = !!mock && mock.questions.every(q => (answers[q.questionId] || '').trim())
   const gradedDone = !!mock && (mock.status === 'graded' || grading?.status === 'succeeded')
+
+  // 错题按考试分组
+  const mistakesByExam = (mistakes || []).reduce<Record<string, { course: string; items: MockMistakeItem[] }>>((acc, m) => {
+    if (!acc[m.examId]) acc[m.examId] = { course: m.course, items: [] }
+    acc[m.examId].items.push(m)
+    return acc
+  }, {})
+  const mistakeExamIds = Object.keys(mistakesByExam)
 
   return <>
     <div className="workspace-title">
@@ -341,15 +313,17 @@ export function MockExam() {
             <div className="status-block">
               <CheckCircle2 size={26} /><p>判卷完成，下面是逐题得分。</p>
               <div className="job-score">{grading.result.totalScore ?? '待评估'}<small> / {grading.result.maxScore} 分</small></div>
-              <QuestionScores result={grading.result} />
               <button className="button" onClick={startNewMock} disabled={busy}>{busy ? '正在开新卷…' : '再来一套'}<ArrowRight size={17} /></button>
             </div>
           )}
           {gradedDone && !grading?.result && (
             <div className="status-block"><Clock size={26} /><p>已判卷，但结果未加载。</p></div>
           )}
-          <button type="button" className="text-button mock-history-trigger" onClick={openHistory}>
+          <button type="button" className="text-button mock-side-link" onClick={openHistory}>
             <History size={15} />判卷历史
+          </button>
+          <button type="button" className="text-button mock-side-link" onClick={openMistakes}>
+            <BookX size={15} />错题集
           </button>
           <div className="side-meta"><Target size={15} />目标 {exam.targetScore} / {exam.maxScore}</div>
         </section>
@@ -373,53 +347,79 @@ export function MockExam() {
               {history.map((item, idx) => {
                 const n = history.length - idx // 从旧到新编号 → 第 N 次
                 const passed = item.totalScore !== null && exam && item.totalScore >= exam.targetScore
-                const expandable = item.status === 'graded' && !!item.gradingId
-                const isOpen = expandedHistoryId === item.mockExamId
-                const detail = expandable ? detailCache[item.gradingId!] : undefined
-                const isLoading = expandable ? !!detailLoading[item.gradingId!] : false
-                const err = expandable ? detailError[item.gradingId!] : ''
-                return <li key={item.mockExamId} className={`mock-history-item ${item.status === 'graded' ? 'is-graded' : ''} ${isOpen ? 'is-open' : ''}`}>
-                  {expandable ? <button type="button" className="mock-history-row" onClick={() => toggleHistoryDetail(item)} aria-expanded={isOpen}>
-                    <ChevronDown size={14} className={`mock-history-chevron ${isOpen ? 'is-rotated' : ''}`} />
-                    <span className="mock-history-no">第 {n} 次</span>
-                    {item.status === 'graded' ? (
-                      <strong className="mock-history-score">{item.totalScore ?? '—'}<small> / {item.maxScore}</small></strong>
-                    ) : (
-                      <span className="mock-history-unfinished">{item.status === 'submitted' ? '判卷中' : '未完成'}</span>
-                    )}
-                    {item.status === 'graded' && exam && (
-                      <span className={`mock-history-flag ${passed ? 'is-pass' : 'is-gap'}`}>
-                        {passed ? `达标（目标 ${exam.targetScore}）` : `距目标 ${Math.max(0, exam.targetScore - (item.totalScore ?? 0))} 分`}
-                      </span>
-                    )}
-                    <span className="mock-history-time">{fmtTime(item.gradedAt || item.submittedAt || item.createdAt)}</span>
-                  </button> : <div className="mock-history-row is-static">
-                    <span className="mock-history-no">第 {n} 次</span>
+                return <li key={item.mockExamId} className={`mock-history-item ${item.status === 'graded' ? 'is-graded' : ''}`}>
+                  <span className="mock-history-no">第 {n} 次</span>
+                  {item.status === 'graded' ? (
+                    <strong className="mock-history-score">{item.totalScore ?? '—'}<small> / {item.maxScore}</small></strong>
+                  ) : (
                     <span className="mock-history-unfinished">{item.status === 'submitted' ? '判卷中' : '未完成'}</span>
-                    <span className="mock-history-time">{fmtTime(item.gradedAt || item.submittedAt || item.createdAt)}</span>
-                  </div>}
-                  {isOpen && expandable && (
-                    <div className="mock-history-detail">
-                      {isLoading ? (
-                        <p className="muted">正在加载逐题评分…</p>
-                      ) : err ? (
-                        <p className="muted">加载失败：{err}</p>
-                      ) : detail?.result ? (
-                        <>
-                          <div className="mock-history-detail-summary">
-                            <span className="muted">本次判卷</span>
-                            <strong>{detail.result.totalScore ?? '—'}<small> / {detail.result.maxScore}</small></strong>
-                          </div>
-                          <QuestionScores result={detail.result} />
-                        </>
-                      ) : (
-                        <p className="muted">暂无评分明细。</p>
-                      )}
-                    </div>
                   )}
+                  {item.status === 'graded' && exam && (
+                    <span className={`mock-history-flag ${passed ? 'is-pass' : 'is-gap'}`}>
+                      {passed ? `达标（目标 ${exam.targetScore}）` : `距目标 ${Math.max(0, exam.targetScore - (item.totalScore ?? 0))} 分`}
+                    </span>
+                  )}
+                  <span className="mock-history-time">{fmtTime(item.gradedAt || item.submittedAt || item.createdAt)}</span>
                 </li>
               })}
             </ol>
+          )}
+        </div>
+      </div>
+    )}
+
+    {/* 错题集弹层：用户全部已判卷错题，按考试分组 */}
+    {mistakesOpen && (
+      <div className="mock-mistakes-overlay" role="dialog" aria-modal="true" aria-label="错题集" onClick={() => setMistakesOpen(false)}>
+        <div className="mock-mistakes-modal" onClick={e => e.stopPropagation()}>
+          <div className="mock-mistakes-head">
+            <h2><BookX size={18} />错题集</h2>
+            <button type="button" className="icon-button" aria-label="关闭" onClick={() => setMistakesOpen(false)}><X size={18} /></button>
+          </div>
+          {mistakesLoading ? (
+            <div className="empty-state" role="status">正在加载错题…</div>
+          ) : !mistakes || mistakes.length === 0 ? (
+            <div className="empty-state"><CheckCircle2 size={28} /><p>还没有错题，做完一套模拟卷之后再来看看吧。</p></div>
+          ) : (
+            <div className="mock-mistakes-groups">
+              <div className="mock-mistakes-summary">
+                共 <strong>{mistakes.length}</strong> 道错题，覆盖 <strong>{mistakeExamIds.length}</strong> 场考试。
+              </div>
+              {mistakeExamIds.map(eid => {
+                const g = mistakesByExam[eid]
+                return <section key={eid} className="mock-mistakes-group">
+                  <header className="mock-mistakes-group-head">
+                    <h3>{g.course}</h3>
+                    <span className="tag">{g.items.length} 道</span>
+                  </header>
+                  <ol className="mock-mistakes-list">
+                    {g.items.map((m, i) => (
+                      <li key={`${m.mockExamId}-${m.questionId}-${i}`} className="mock-mistake-item">
+                        <div className="mock-mistake-head">
+                          <span className="mock-mistake-score">{m.score}<small> / {m.maxScore}</small></span>
+                          {m.knowledgePoints.length > 0 && (
+                            <span className="mock-mistake-kp">{m.knowledgePoints.join(' · ')}</span>
+                          )}
+                          <span className="mock-mistake-time">{fmtTime(m.gradedAt)}</span>
+                        </div>
+                        <p className="mock-mistake-prompt">{m.prompt}</p>
+                        <div className="mock-mistake-answers">
+                          <div className="mock-mistake-answer is-wrong">
+                            <span className="mock-mistake-label">你的作答</span>
+                            <span className="mock-mistake-text">{m.userAnswer || <em className="muted">（空白）</em>}</span>
+                          </div>
+                          <div className="mock-mistake-answer is-correct">
+                            <span className="mock-mistake-label">正确答案</span>
+                            <span className="mock-mistake-text">{m.correctAnswer || <em className="muted">（无）</em>}</span>
+                          </div>
+                        </div>
+                        {m.errorReason && <p className="mock-mistake-reason">提示：{m.errorReason}</p>}
+                      </li>
+                    ))}
+                  </ol>
+                </section>
+              })}
+            </div>
           )}
         </div>
       </div>
