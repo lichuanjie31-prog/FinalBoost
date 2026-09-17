@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
-import { ArrowRight, CheckCircle2, ClipboardList, Clock, History, ScanLine, Target, X } from 'lucide-react'
+import { ArrowRight, CheckCircle2, ChevronDown, ClipboardList, Clock, History, ScanLine, Target, X } from 'lucide-react'
 import { ErrorMessage, MockNotice } from '../../components/Shared'
 import { study, type Exam, type Grading, type MockExam, type MockHistoryItem, type MockQuestion } from '../../api/study'
 import { QuestionScores } from './QuestionScores'
@@ -39,6 +39,11 @@ export function MockExam() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [history, setHistory] = useState<MockHistoryItem[] | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
+  // 详情：每条已判卷的详情按 gradingId 缓存，避免重复拉取
+  const [detailCache, setDetailCache] = useState<Record<string, Grading>>({})
+  const [detailLoading, setDetailLoading] = useState<Record<string, boolean>>({})
+  const [detailError, setDetailError] = useState<Record<string, string>>({})
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null)
   const intent = useRef(crypto.randomUUID())
   const answersRef = useRef(answers); answersRef.current = answers
 
@@ -163,13 +168,31 @@ export function MockExam() {
   }
 
   async function openHistory() {
-    setHistoryOpen(true); setHistoryLoading(true)
+    setHistoryOpen(true); setHistoryLoading(true); setExpandedHistoryId(null)
     try {
       // 不传 abort signal：弹层开关由 state 控制，拉取结果直接落地
       const items = await study.mockHistory(id)
       setHistory(items)
     } catch { setHistory([]) }
     finally { setHistoryLoading(false) }
+  }
+
+  async function toggleHistoryDetail(item: MockHistoryItem) {
+    if (item.status !== 'graded' || !item.gradingId) return
+    // 切换展开：再点一次收起
+    setExpandedHistoryId(prev => prev === item.mockExamId ? null : item.mockExamId)
+    // 已缓存则不重拉
+    if (detailCache[item.gradingId]) return
+    setDetailLoading(prev => ({ ...prev, [item.gradingId!]: true }))
+    setDetailError(prev => ({ ...prev, [item.gradingId!]: '' }))
+    try {
+      const g = await study.grading(item.gradingId)
+      setDetailCache(prev => ({ ...prev, [item.gradingId!]: g }))
+    } catch (e) {
+      setDetailError(prev => ({ ...prev, [item.gradingId!]: (e as Error).message }))
+    } finally {
+      setDetailLoading(prev => ({ ...prev, [item.gradingId!]: false }))
+    }
   }
 
   function fmtTime(ts?: number | null) {
@@ -315,7 +338,7 @@ export function MockExam() {
             </div>
           )}
           {gradedDone && grading?.result && (
-            <div className="status-block" id="mock-result-block">
+            <div className="status-block">
               <CheckCircle2 size={26} /><p>判卷完成，下面是逐题得分。</p>
               <div className="job-score">{grading.result.totalScore ?? '待评估'}<small> / {grading.result.maxScore} 分</small></div>
               <QuestionScores result={grading.result} />
@@ -350,48 +373,56 @@ export function MockExam() {
               {history.map((item, idx) => {
                 const n = history.length - idx // 从旧到新编号 → 第 N 次
                 const passed = item.totalScore !== null && exam && item.totalScore >= exam.targetScore
-                return <li key={item.mockExamId} className={`mock-history-item ${item.status === 'graded' ? 'is-graded' : ''}`}>
-                  <span className="mock-history-no">第 {n} 次</span>
-                  {item.status === 'graded' ? (
-                    <strong className="mock-history-score">{item.totalScore ?? '—'}<small> / {item.maxScore}</small></strong>
-                  ) : (
+                const expandable = item.status === 'graded' && !!item.gradingId
+                const isOpen = expandedHistoryId === item.mockExamId
+                const detail = expandable ? detailCache[item.gradingId!] : undefined
+                const isLoading = expandable ? !!detailLoading[item.gradingId!] : false
+                const err = expandable ? detailError[item.gradingId!] : ''
+                return <li key={item.mockExamId} className={`mock-history-item ${item.status === 'graded' ? 'is-graded' : ''} ${isOpen ? 'is-open' : ''}`}>
+                  {expandable ? <button type="button" className="mock-history-row" onClick={() => toggleHistoryDetail(item)} aria-expanded={isOpen}>
+                    <ChevronDown size={14} className={`mock-history-chevron ${isOpen ? 'is-rotated' : ''}`} />
+                    <span className="mock-history-no">第 {n} 次</span>
+                    {item.status === 'graded' ? (
+                      <strong className="mock-history-score">{item.totalScore ?? '—'}<small> / {item.maxScore}</small></strong>
+                    ) : (
+                      <span className="mock-history-unfinished">{item.status === 'submitted' ? '判卷中' : '未完成'}</span>
+                    )}
+                    {item.status === 'graded' && exam && (
+                      <span className={`mock-history-flag ${passed ? 'is-pass' : 'is-gap'}`}>
+                        {passed ? `达标（目标 ${exam.targetScore}）` : `距目标 ${Math.max(0, exam.targetScore - (item.totalScore ?? 0))} 分`}
+                      </span>
+                    )}
+                    <span className="mock-history-time">{fmtTime(item.gradedAt || item.submittedAt || item.createdAt)}</span>
+                  </button> : <div className="mock-history-row is-static">
+                    <span className="mock-history-no">第 {n} 次</span>
                     <span className="mock-history-unfinished">{item.status === 'submitted' ? '判卷中' : '未完成'}</span>
+                    <span className="mock-history-time">{fmtTime(item.gradedAt || item.submittedAt || item.createdAt)}</span>
+                  </div>}
+                  {isOpen && expandable && (
+                    <div className="mock-history-detail">
+                      {isLoading ? (
+                        <p className="muted">正在加载逐题评分…</p>
+                      ) : err ? (
+                        <p className="muted">加载失败：{err}</p>
+                      ) : detail?.result ? (
+                        <>
+                          <div className="mock-history-detail-summary">
+                            <span className="muted">本次判卷</span>
+                            <strong>{detail.result.totalScore ?? '—'}<small> / {detail.result.maxScore}</small></strong>
+                          </div>
+                          <QuestionScores result={detail.result} />
+                        </>
+                      ) : (
+                        <p className="muted">暂无评分明细。</p>
+                      )}
+                    </div>
                   )}
-                  {item.status === 'graded' && exam && (
-                    <span className={`mock-history-flag ${passed ? 'is-pass' : 'is-gap'}`}>
-                      {passed ? `达标（目标 ${exam.targetScore}）` : `距目标 ${Math.max(0, exam.targetScore - (item.totalScore ?? 0))} 分`}
-                    </span>
-                  )}
-                  <span className="mock-history-time">{fmtTime(item.gradedAt || item.submittedAt || item.createdAt)}</span>
                 </li>
               })}
             </ol>
           )}
         </div>
       </div>
-    )}
-
-    {/* 悬浮"查看成绩"药丸：判卷完成后从屏幕底部浮起，
-        答完最后一道题滚到底部时不用再爬回去看结果。 */}
-    {gradedDone && grading?.result && (
-      <button
-        type="button"
-        className="mock-result-pill"
-        onClick={() => {
-          const target = document.getElementById('mock-result-block')
-          target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-          // 再给结果块一个轻微脉冲，强调"到了"
-          target?.classList.add('is-flashing')
-          setTimeout(() => target?.classList.remove('is-flashing'), 1200)
-        }}
-        aria-label="查看本次成绩"
-      >
-        <CheckCircle2 size={18} />
-        <span className="mock-result-pill-label">本次成绩</span>
-        <strong className="mock-result-pill-score">
-          {grading.result.totalScore ?? '—'}<small> / {grading.result.maxScore}</small>
-        </strong>
-      </button>
     )}
   </>
 }

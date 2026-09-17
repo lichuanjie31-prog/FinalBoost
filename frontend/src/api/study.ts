@@ -37,6 +37,7 @@ export type MockHistoryItem = {
   createdAt: number
   submittedAt?: number | null
   gradedAt?: number | null
+  gradingId?: string | null
 }
 
 async function allPages<T>(path: string, signal?: AbortSignal): Promise<T[]> {

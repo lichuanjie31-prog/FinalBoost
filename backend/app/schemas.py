@@ -200,3 +200,4 @@ class MockHistoryItem(BaseModel):
     createdAt: float
     submittedAt: float | None = None
     gradedAt: float | None = None
+    gradingId: str | None = None  # 已判卷时为关联的判卷任务 id（用于加载详情）

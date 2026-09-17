@@ -294,12 +294,14 @@ def submit_mock_exam(exam_id:str,mock_exam_id:str,body:MockExamSubmitIn,request:
 def list_mock_history(exam_id:str,request:Request,user=Depends(current_user)):
     """本场考试的全部最终模拟记录（判卷历史），按创建时间倒序。
 
-    已判卷的记录附带最近一次成功判卷的 totalScore（重试取最新一次）。
+    已判卷的记录附带最近一次成功判卷的 totalScore 与 gradingId（用于加载逐题详情）。
     """
     with request.app.state.db.transaction() as db:
         owned(db,"exams",exam_id,user["id"])
         rows=db.execute(
             "SELECT m.id, m.status, m.questions_json, m.created_at, m.submitted_at, m.graded_at,"
+            " (SELECT g.id FROM grading_jobs g WHERE g.mock_exam_id=m.id AND g.status='succeeded'"
+            "  ORDER BY g.created_at DESC LIMIT 1) AS grading_id,"
             " (SELECT g.result_json FROM grading_jobs g WHERE g.mock_exam_id=m.id AND g.status='succeeded'"
             "  ORDER BY g.created_at DESC LIMIT 1) AS result_json"
             " FROM mock_exams m WHERE m.user_id=? AND m.exam_id=? ORDER BY m.created_at DESC, m.id DESC",
@@ -316,5 +318,6 @@ def list_mock_history(exam_id:str,request:Request,user=Depends(current_user)):
                 mockExamId=r["id"],status=r["status"],totalScore=total,
                 maxScore=sum(q["maxScore"] for q in questions),
                 createdAt=r["created_at"],submittedAt=r["submitted_at"],gradedAt=r["graded_at"],
+                gradingId=r["grading_id"],
             ).model_dump())
         return envelope(items)
