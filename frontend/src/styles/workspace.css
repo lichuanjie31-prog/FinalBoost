@@ -65,9 +65,6 @@
 .panel{background:white;border:1px solid var(--border);border-radius:var(--radius);padding:24px;min-width:0}
 .panel-title{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
 .panel-title h2{font-size:18px;font-weight:600;letter-spacing:-.02em}
-.panel-title-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.panel-title-actions .text-button{padding:4px 10px;font-size:12px;color:var(--ink-soft)}
-.panel-title-actions .text-button:hover{color:var(--ink)}
 .panel>.muted{font-size:12px;color:var(--ink-soft)}
 
 /* Detail grid */
@@ -195,16 +192,13 @@
 .phase.is-current .phase-dot{background:var(--ink);box-shadow:0 0 0 4px rgba(24,24,27,.12)}
 
 .mock-questions-panel{gap:18px}
-.mock-question,.mock-readonly-item{border:1px solid var(--border);border-radius:var(--radius);padding:0;background:white;margin:0;overflow:hidden;scroll-margin-top:24px;transition:border-color .15s,box-shadow .15s}
+.mock-question,.mock-readonly-item{border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin:0;background:white;overflow:hidden;scroll-margin-top:24px;transition:border-color .15s,box-shadow .15s}
 .mock-question:hover,.mock-readonly-item:hover{border-color:var(--ink-soft)}
 .mock-question.is-answered,.mock-readonly-item.is-answered{border-color:var(--ink-soft)}
-.mock-question-toggle{display:flex;align-items:center;gap:10px;width:100%;padding:14px 18px;background:transparent;border:0;cursor:pointer;font:inherit;color:inherit;text-align:left}
-.mock-question-toggle strong{font-size:14px;color:var(--ink)}
-.mock-question-toggle .muted{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted);margin-left:auto}
-.mock-question-chevron{color:var(--ink-muted);transition:transform .2s;flex-shrink:0}
-.mock-question-chevron.is-rotated{transform:rotate(180deg)}
+.mock-question-legend{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.mock-question-legend strong{font-size:14px;color:var(--ink)}
+.mock-question-legend .muted{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted);margin-left:auto}
 .mock-question-flag{display:inline-block;padding:2px 8px;font-size:11px;font-family:var(--font-mono);background:var(--ink);color:#fff;border-radius:99px}
-.mock-question-body{padding:0 18px 18px;border-top:1px solid var(--border-light);padding-top:14px}
 .mock-prompt{font-size:14px;line-height:1.7;color:var(--ink);margin:8px 0 14px;white-space:pre-wrap}
 .mock-options{display:flex;flex-direction:column;gap:8px}
 .mock-option{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;font-size:13px;line-height:1.5}

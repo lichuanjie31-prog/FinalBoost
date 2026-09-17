@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CheckCircle2, ChevronDown, ClipboardList, Clock, ScanLine, Target } from 'lucide-react'
+import { ArrowLeft, ArrowRight, CheckCircle2, ClipboardList, Clock, ScanLine, Target } from 'lucide-react'
 import { ErrorMessage, MockNotice } from '../../components/Shared'
 import { study, type Exam, type Grading, type MockExam, type MockQuestion } from '../../api/study'
 import { QuestionScores } from './QuestionScores'
@@ -35,8 +35,6 @@ export function MockExam() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
-  // 试卷折叠状态：作答中默认全部收起；判卷完成后默认展开便于复盘
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const intent = useRef(crypto.randomUUID())
   const answersRef = useRef(answers); answersRef.current = answers
 
@@ -56,14 +54,10 @@ export function MockExam() {
             const g = await study.grading(m.gradingId, controller.signal)
             if (!controller.signal.aborted) setGrading(g)
             setPhase('result')
-            // 复盘场景：默认展开所有题目
-            setExpanded(new Set(m.questions.map(q => q.questionId)))
           } else if (m.status === 'submitted') {
             setPhase('grading')
           } else {
             setPhase('ready')
-            // 作答场景：默认全部收起
-            setExpanded(new Set())
           }
           // 回填学生已作答的答案
           const existing: Record<string, string> = {}
@@ -115,15 +109,6 @@ export function MockExam() {
     // 把焦点放到第一道题的选项/文本框（让键盘 / 移动端可以直接作答）
     const focusTarget = el.querySelector('textarea, input[type="radio"]') as HTMLElement | null
     focusTarget?.focus({ preventScroll: true })
-  }
-
-  function toggleExpanded(questionId: string) {
-    setExpanded(old => {
-      const next = new Set(old)
-      if (next.has(questionId)) next.delete(questionId)
-      else next.add(questionId)
-      return next
-    })
   }
 
   async function submitAnswers(event: FormEvent) {
@@ -212,31 +197,19 @@ export function MockExam() {
         <section className="panel mock-questions-panel">
           <div className="panel-title">
             <h2>试卷</h2>
-            <div className="panel-title-actions">
-              <span className="tag">{mock.questions.length} 题 / {mock.maxScore} 分</span>
-              <button type="button" className="text-button" onClick={() => setExpanded(new Set(mock.questions.map(q => q.questionId)))}>全部展开</button>
-              <button type="button" className="text-button" onClick={() => setExpanded(new Set())}>全部收起</button>
-            </div>
+            <span className="tag">{mock.questions.length} 题 / {mock.maxScore} 分</span>
           </div>
           {mock.status === 'ready' ? (
             <form onSubmit={submitAnswers} className="form-stack">
               {mock.questions.map((q, idx) => {
-                const isOpen = expanded.has(q.questionId)
                 const answered = !!(answers[q.questionId] || '').trim()
-                return <fieldset key={q.questionId} id={`mock-q-${q.questionId}`} className={`mock-question ${isOpen ? 'is-open' : 'is-collapsed'} ${answered ? 'is-answered' : ''}`}>
-                    <button
-                      type="button"
-                      className="mock-question-toggle"
-                      aria-expanded={isOpen}
-                      aria-controls={`mock-q-body-${q.questionId}`}
-                      onClick={() => toggleExpanded(q.questionId)}
-                    >
-                      <ChevronDown size={16} className={`mock-question-chevron ${isOpen ? 'is-rotated' : ''}`} />
+                return <fieldset key={q.questionId} id={`mock-q-${q.questionId}`} className={`mock-question ${answered ? 'is-answered' : ''}`}>
+                    <legend className="mock-question-legend">
                       <strong>第 {idx + 1} 题</strong>
                       <span className="muted">{q.knowledgePoints.join('、')} · {q.maxScore} 分</span>
                       {answered && <span className="mock-question-flag">已作答</span>}
-                    </button>
-                    {isOpen && <div id={`mock-q-body-${q.questionId}`} className="mock-question-body">
+                    </legend>
+                    <div className="mock-question-body">
                       <p className="mock-prompt">{q.prompt}</p>
                       {q.options?.length ? (
                         <div className="mock-options">
@@ -251,7 +224,7 @@ export function MockExam() {
                       ) : (
                         <textarea rows={3} value={answers[q.questionId] || ''} onChange={e => selectAnswer(q.questionId, e.target.value)} placeholder="在此作答" />
                       )}
-                    </div>}
+                    </div>
                   </fieldset>
               })}
               <div className="form-row">
@@ -262,20 +235,18 @@ export function MockExam() {
           ) : (
             <ol className="mock-readonly-list">
               {mock.questions.map((q, idx) => {
-                const isOpen = expanded.has(q.questionId)
                 const answered = !!(answers[q.questionId] || '').trim()
-                return <li key={q.questionId} id={`mock-q-${q.questionId}`} className={`mock-readonly-item ${isOpen ? 'is-open' : 'is-collapsed'} ${answered ? 'is-answered' : ''}`}>
-                    <button type="button" className="mock-question-toggle" aria-expanded={isOpen} aria-controls={`mock-q-body-${q.questionId}`} onClick={() => toggleExpanded(q.questionId)}>
-                      <ChevronDown size={16} className={`mock-question-chevron ${isOpen ? 'is-rotated' : ''}`} />
+                return <li key={q.questionId} id={`mock-q-${q.questionId}`} className={`mock-readonly-item ${answered ? 'is-answered' : ''}`}>
+                    <div className="mock-question-legend">
                       <strong>第 {idx + 1} 题 · {q.maxScore} 分</strong>
                       <span className="muted">{q.knowledgePoints.join('、')}</span>
                       {answered && <span className="mock-question-flag">已作答</span>}
-                    </button>
-                    {isOpen && <div id={`mock-q-body-${q.questionId}`} className="mock-question-body">
+                    </div>
+                    <div className="mock-question-body">
                       <p className="mock-prompt">{q.prompt}</p>
                       {q.options?.length && <ul className="mock-options readonly">{q.options.map(o => <li key={o.label} className={answers[q.questionId] === o.label ? 'is-checked' : ''}>{o.label}. {o.text}</li>)}</ul>}
                       {!q.options?.length && <p className="mock-text-answer">作答：{answers[q.questionId] || <em className="muted">（空白）</em>}</p>}
-                    </div>}
+                    </div>
                   </li>
               })}
             </ol>
