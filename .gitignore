@@ -15,3 +15,4 @@ artifacts/
 resume-clone/
 .claude/
 .workbuddy/
+*.tsbuildinfo
