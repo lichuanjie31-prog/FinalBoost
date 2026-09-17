@@ -246,3 +246,18 @@
 
 /* 题目跳转锚点高亮 */
 .mock-question:target{outline:2px solid var(--ink);outline-offset:4px;scroll-margin-top:24px}
+
+/* 最终模拟板块页（/app/mock）：按考试聚合的卡片网格 */
+.mock-hub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:8px}
+.mock-hub-card{display:flex;flex-direction:column;gap:10px;padding:20px 22px;background:white;border:1px solid var(--border);border-radius:var(--radius);transition:border-color .15s,box-shadow .15s}
+.mock-hub-card:hover{border-color:var(--ink-soft);box-shadow:0 4px 14px rgba(0,0,0,.05)}
+.mock-hub-card h2{font-size:18px;margin:0}
+.mock-hub-card .card-top{display:flex;justify-content:space-between;align-items:center}
+.mock-hub-card .muted{font-size:12px;color:var(--ink-muted);display:inline-flex;align-items:center;gap:6px}
+.mock-hub-hint{font-size:12px;color:var(--ink-soft);margin:0;line-height:1.5}
+.mock-hub-status{font-size:11px;font-family:var(--font-mono);padding:3px 8px;border-radius:99px;background:var(--surface-warm);color:var(--ink-soft)}
+.mock-hub-status.is-graded{background:var(--ink);color:#fff}
+.mock-hub-status.is-ready{background:#ecfdf5;color:#047857}
+.mock-hub-status.is-submitted{background:#fef3c7;color:#92400e}
+.mock-hub-bottom{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:8px;border-top:1px solid var(--border-light)}
+.mock-hub-bottom .muted strong{color:var(--ink);font-family:var(--font-mono)}
