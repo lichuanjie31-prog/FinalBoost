@@ -222,7 +222,9 @@
 .mock-readonly-item .muted{font-size:11px;font-family:var(--font-mono)}
 .mock-text-answer{background:var(--surface-warm);padding:10px 12px;border-radius:6px;font-size:13px;white-space:pre-wrap;margin:8px 0 0}
 
-.mock-side-panel{display:flex;flex-direction:column;gap:16px}
+.mock-side-panel{display:flex;flex-direction:column;gap:16px;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow-y:auto;scrollbar-width:thin}
+.mock-side-panel::-webkit-scrollbar{width:6px}
+.mock-side-panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px}
 .status-block{display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 16px;text-align:center}
 .status-block p{margin:0;font-size:13px;color:var(--ink-soft);line-height:1.6}
 .status-block .job-score{font-family:var(--font-mono);font-size:38px;font-weight:600;color:var(--ink);letter-spacing:-.02em;line-height:1}
@@ -250,6 +252,22 @@
 
 /* 题目跳转锚点高亮 */
 .mock-question:target{outline:2px solid var(--ink);outline-offset:4px;scroll-margin-top:24px}
+
+/* 悬浮"查看成绩"药丸：判卷完成后从屏幕底部浮起 */
+.mock-result-pill{position:fixed;right:24px;bottom:24px;z-index:50;display:inline-flex;align-items:center;gap:10px;padding:12px 18px;background:var(--ink);color:#fff;border:none;border-radius:99px;box-shadow:0 8px 24px rgba(0,0,0,.18);cursor:pointer;font-family:inherit;transition:transform .2s,box-shadow .2s;animation:mock-pill-rise .35s cubic-bezier(.34,1.56,.64,1)}
+.mock-result-pill:hover{transform:translateY(-2px);box-shadow:0 12px 28px rgba(0,0,0,.22)}
+.mock-result-pill:active{transform:translateY(0)}
+.mock-result-pill-label{font-size:12px;color:rgba(255,255,255,.7);font-family:var(--font-mono);letter-spacing:.04em}
+.mock-result-pill-score{font-size:18px;font-weight:600;font-family:var(--font-mono);letter-spacing:-.02em;line-height:1}
+.mock-result-pill-score small{font-size:11px;color:rgba(255,255,255,.6);font-weight:400;margin-left:3px}
+@keyframes mock-pill-rise{from{transform:translateY(80px);opacity:0}to{transform:translateY(0);opacity:1}}
+@keyframes mock-pill-pulse{0%{box-shadow:0 8px 24px rgba(0,0,0,.18),0 0 0 0 rgba(0,0,0,.35)}70%{box-shadow:0 8px 24px rgba(0,0,0,.18),0 0 0 14px rgba(0,0,0,0)}100%{box-shadow:0 8px 24px rgba(0,0,0,.18),0 0 0 0 rgba(0,0,0,0)}}
+.mock-result-pill{animation:mock-pill-rise .35s cubic-bezier(.34,1.56,.64,1),mock-pill-pulse 1.4s ease-out 1}
+@media (max-width:720px){.mock-result-pill{right:16px;bottom:16px;padding:10px 14px}.mock-result-pill-label{display:none}}
+
+/* 点击药丸跳转后给结果块一个轻闪，强调"到了这里" */
+#mock-result-block.is-flashing{animation:mock-result-flash 1.2s ease-out}
+@keyframes mock-result-flash{0%{background:var(--surface-warm);box-shadow:0 0 0 4px var(--surface-warm)}100%{background:transparent;box-shadow:0 0 0 0 transparent}}
 
 /* 最终模拟板块页（/app/mock）：按考试聚合的卡片网格 */
 .mock-hub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:8px}

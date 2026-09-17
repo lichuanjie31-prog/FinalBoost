@@ -178,7 +178,7 @@ export function MockExam() {
 
   const phaseIdx = currentPhaseIndex(mock, phase === 'answering', phase === 'failed', grading?.status === 'succeeded')
   const allAnswered = !!mock && mock.questions.every(q => (answers[q.questionId] || '').trim())
-  const gradedDone = mock.status === 'graded' || grading?.status === 'succeeded'
+  const gradedDone = !!mock && (mock.status === 'graded' || grading?.status === 'succeeded')
 
   return <>
     <Link className="text-link back-link" to="/app"><ArrowLeft size={16} />我的备考</Link>
@@ -326,7 +326,7 @@ export function MockExam() {
             </div>
           )}
           {gradedDone && grading?.result && (
-            <div className="status-block">
+            <div className="status-block" id="mock-result-block">
               <CheckCircle2 size={26} /><p>判卷完成，下面是逐题得分。</p>
               <div className="job-score">{grading.result.totalScore ?? '待评估'}<small> / {grading.result.maxScore} 分</small></div>
               <QuestionScores result={grading.result} />
@@ -339,6 +339,29 @@ export function MockExam() {
           <div className="side-meta"><Target size={15} />目标 {exam.targetScore} / {exam.maxScore}</div>
         </section>
       </div>
+    )}
+
+    {/* 悬浮"查看成绩"药丸：判卷完成后从屏幕底部浮起，
+        答完最后一道题滚到底部时不用再爬回去看结果。 */}
+    {gradedDone && grading?.result && (
+      <button
+        type="button"
+        className="mock-result-pill"
+        onClick={() => {
+          const target = document.getElementById('mock-result-block')
+          target?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+          // 再给结果块一个轻微脉冲，强调"到了"
+          target?.classList.add('is-flashing')
+          setTimeout(() => target?.classList.remove('is-flashing'), 1200)
+        }}
+        aria-label="查看本次成绩"
+      >
+        <CheckCircle2 size={18} />
+        <span className="mock-result-pill-label">本次成绩</span>
+        <strong className="mock-result-pill-score">
+          {grading.result.totalScore ?? '—'}<small> / {grading.result.maxScore}</small>
+        </strong>
+      </button>
     )}
   </>
 }
