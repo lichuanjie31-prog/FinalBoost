@@ -225,6 +225,27 @@
 .status-block .job-score small{font-size:14px;color:var(--ink-muted);font-weight:400;margin-left:6px}
 .status-block .job-status-badge{display:inline-block;padding:4px 10px;border-radius:99px;background:var(--surface-warm);font-size:11px;font-family:var(--font-mono)}
 .side-meta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-muted);padding:10px 14px;border-top:1px solid var(--border);font-family:var(--font-mono)}
+
+/* 判卷完成后：题目卡对错标色 + 右栏错题列表 */
+.mock-readonly-item.is-correct{border-color:#6ee7b7;background:#f2fdf7}
+.mock-readonly-item.is-wrong{border-color:#fecaca;background:#fef5f5}
+.mock-result-flag{font-size:11px;font-family:var(--font-mono);padding:3px 8px;border-radius:99px;white-space:nowrap}
+.mock-result-flag.is-correct{background:#ecfdf5;color:#047857}
+.mock-result-flag.is-wrong{background:#fef2f2;color:#b91c1c}
+.mock-all-correct{margin:0;font-size:13px;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:10px 14px}
+.mock-wrong-list{display:flex;flex-direction:column;gap:10px;width:100%}
+.mock-wrong-title{font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);text-align:left}
+.mock-wrong-item{display:flex;flex-direction:column;gap:8px;align-items:stretch;text-align:left;border:1px solid #fecaca;background:#fff;border-radius:8px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit}
+.mock-wrong-item:hover{background:#fef5f5}
+.mock-wrong-top{display:flex;justify-content:space-between;align-items:center}
+.mock-wrong-top strong{font-size:13px}
+.mock-wrong-score{font-family:var(--font-mono);font-size:15px;font-weight:600;color:#b91c1c}
+.mock-wrong-score small{font-size:11px;color:var(--ink-muted);font-weight:400}
+.mock-wrong-kps{display:flex;flex-wrap:wrap;gap:6px}
+.kp-pill{font-size:10px;font-family:var(--font-mono);padding:2px 8px;border-radius:99px;background:var(--surface-warm);color:var(--ink-soft)}
+.mock-wrong-prompt{margin:0;font-size:12px;color:var(--ink-soft);line-height:1.5}
+.mock-wrong-answer{margin:0;font-size:12px;color:#b91c1c;background:#fef2f2;border-radius:6px;padding:6px 8px}
+.mock-wrong-reason{margin:0;font-size:11px;color:var(--ink-soft);font-family:var(--font-mono)}
 .form-row{display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--border-light)}
 .form-row .muted{font-size:12px}
 .is-disabled{opacity:.5;cursor:not-allowed}

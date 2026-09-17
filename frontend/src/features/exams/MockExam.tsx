@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { ArrowRight, BookX, CheckCircle2, ClipboardList, Clock, History, ScanLine, Target, X } from 'lucide-react'
 import { ErrorMessage, MockNotice } from '../../components/Shared'
-import { QuestionScores } from './QuestionScores'
 import { study, type Exam, type Grading, type MockExam, type MockHistoryItem, type MockMistakeItem, type MockQuestion, type MockStudentAnswer } from '../../api/study'
 
 // 5 状态进度条（UI 状态机）
@@ -208,6 +207,9 @@ export function MockExam() {
   const phaseIdx = currentPhaseIndex(mock, phase === 'answering', phase === 'failed', grading?.status === 'succeeded')
   const allAnswered = !!mock && mock.questions.every(q => (answers[q.questionId] || '').trim())
   const gradedDone = !!mock && (mock.status === 'graded' || grading?.status === 'succeeded')
+  // 判卷结果按题索引：左侧题目卡标色 / 右栏错题列表都用它
+  const gradeByQ = new Map((grading?.result?.questions ?? []).map(g => [g.questionId, g]))
+  const wrongGrades = (grading?.result?.questions ?? []).filter(g => g.correct === false)
 
   // 错题按考试分组
   const mistakesByExam = (mistakes || []).reduce<Record<string, { course: string; items: MockMistakeItem[] }>>((acc, m) => {
@@ -287,11 +289,14 @@ export function MockExam() {
             <ol className="mock-readonly-list">
               {mock.questions.map((q, idx) => {
                 const answered = !!(answers[q.questionId] || '').trim()
-                return <li key={q.questionId} id={`mock-q-${q.questionId}`} className={`mock-readonly-item ${answered ? 'is-answered' : ''}`}>
+                const grade = gradedDone ? gradeByQ.get(q.questionId) : undefined
+                return <li key={q.questionId} id={`mock-q-${q.questionId}`} className={`mock-readonly-item ${answered ? 'is-answered' : ''} ${grade ? (grade.correct ? 'is-correct' : 'is-wrong') : ''}`}>
                     <div className="mock-question-legend">
                       <strong>第 {idx + 1} 题 · {q.maxScore} 分</strong>
                       <span className="muted">{q.knowledgePoints.join('、')}</span>
-                      {answered && <span className="mock-question-flag">已作答</span>}
+                      {grade
+                        ? <span className={`mock-result-flag ${grade.correct ? 'is-correct' : 'is-wrong'}`}>{grade.correct ? '答对' : '答错'} {grade.score ?? 0} / {q.maxScore} 分</span>
+                        : answered && <span className="mock-question-flag">已作答</span>}
                     </div>
                     <div className="mock-question-body">
                       <p className="mock-prompt">{q.prompt}</p>
@@ -351,7 +356,32 @@ export function MockExam() {
             <div className="status-block">
               <CheckCircle2 size={26} /><p>判卷完成，下面是逐题得分。</p>
               <div className="job-score">{grading.result.totalScore ?? '待评估'}<small> / {grading.result.maxScore} 分</small></div>
-              <QuestionScores result={grading.result} />
+              {wrongGrades.length === 0 ? (
+                <p className="mock-all-correct">全部答对，非常棒！</p>
+              ) : (
+                <div className="mock-wrong-list">
+                  <div className="mock-wrong-title">错题 {wrongGrades.length} 道 · 点击可跳转原题</div>
+                  {wrongGrades.map(g => {
+                    const qi = mock.questions.findIndex(x => x.questionId === g.questionId)
+                    if (qi < 0) return null
+                    const q = mock.questions[qi]
+                    const raw = answers[q.questionId] || q.studentAnswer || ''
+                    const chosen = q.options?.find(o => o.label === raw)
+                    return <button type="button" key={g.questionId} className="mock-wrong-item" onClick={() => jumpToQuestion(g.questionId)}>
+                      <div className="mock-wrong-top">
+                        <strong>第 {qi + 1} 题</strong>
+                        <span className="mock-wrong-score">{g.score ?? 0}<small> / {g.maxScore}</small></span>
+                      </div>
+                      {q.knowledgePoints.length > 0 && (
+                        <div className="mock-wrong-kps">{q.knowledgePoints.map(k => <span key={k} className="kp-pill">{k}</span>)}</div>
+                      )}
+                      <p className="mock-wrong-prompt">{q.prompt}</p>
+                      {raw && <p className="mock-wrong-answer">你的作答：{chosen ? `${chosen.label}. ${chosen.text}` : raw}</p>}
+                      {g.errorReason && <p className="mock-wrong-reason">{g.errorReason}</p>}
+                    </button>
+                  })}
+                </div>
+              )}
               <button className="button" onClick={startNewMock} disabled={busy}>{busy ? '正在开新卷…' : '再来一套'}<ArrowRight size={17} /></button>
             </div>
           )}
