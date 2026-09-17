@@ -354,7 +354,7 @@ export function MockExam() {
           )}
           {gradedDone && grading?.result && (
             <div className="status-block">
-              <CheckCircle2 size={26} /><p>判卷完成，下面是逐题得分。</p>
+              <CheckCircle2 size={26} /><p>判卷完成。</p>
               <div className="job-score">{grading.result.totalScore ?? '待评估'}<small> / {grading.result.maxScore} 分</small></div>
               {wrongGrades.length === 0 ? (
                 <p className="mock-all-correct">全部答对，非常棒！</p>
