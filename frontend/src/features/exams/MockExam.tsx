@@ -16,9 +16,10 @@ const PHASES: { key: Phase; label: string }[] = [
   { key: 'result',    label: '结果' },
 ]
 
-function currentPhaseIndex(mock: MockExam | null, working: boolean, failed: boolean): number {
+function currentPhaseIndex(mock: MockExam | null, working: boolean, failed: boolean, done: boolean): number {
   if (failed) return -1
   if (mock === null) return 0 // 还在创建
+  if (done) return 4 // 判卷任务已 succeeded（即使 mock 状态还没刷新过来）
   if (mock.status === 'ready') return working ? 2 : 1
   if (mock.status === 'submitted') return 3
   return 4 // graded
@@ -80,8 +81,9 @@ export function MockExam() {
         if (!controller.signal.aborted) {
           setGrading(g)
           if (g.status === 'succeeded') {
-            // 拉最新的 mock（graded + gradingId 已回填）
-            const m = mock ? await study.getMock(id, mock.mockExamId, controller.signal).catch(() => null) : null
+            // 注意：这里不能传 controller.signal——setGrading 会让本 effect 重跑，
+            // cleanup 会 abort 这个 controller，把紧接着的这次拉取自己取消掉（竞态）
+            const m = mock ? await study.getMock(id, mock.mockExamId).catch(() => null) : null
             if (m) setMock(m)
             setPhase('result')
             return
@@ -150,8 +152,9 @@ export function MockExam() {
   if (loading) return <div className="empty-state" role="status">正在准备最终模拟…</div>
   if (!exam) return <div className="panel"><ErrorMessage error={error} /><Link className="text-link" to="/app">返回我的备考</Link></div>
 
-  const phaseIdx = currentPhaseIndex(mock, phase === 'answering', phase === 'failed')
+  const phaseIdx = currentPhaseIndex(mock, phase === 'answering', phase === 'failed', grading?.status === 'succeeded')
   const allAnswered = !!mock && mock.questions.every(q => (answers[q.questionId] || '').trim())
+  const gradedDone = mock.status === 'graded' || grading?.status === 'succeeded'
 
   return <>
     <Link className="text-link back-link" to="/app"><ArrowLeft size={16} />我的备考</Link>
@@ -233,7 +236,7 @@ export function MockExam() {
               <small className="fine-print">系统从内置示例题库抽题，与正式题库解耦；后续接入真题库时无需改动本页面。</small>
             </div>
           )}
-          {mock.status === 'submitted' && (
+          {mock.status === 'submitted' && !gradedDone && (
             <div className="status-block">
               <ClipboardList size={26} /><p>作答已提交，正在等待判卷。</p>
               {grading && grading.status !== 'failed'
@@ -243,7 +246,7 @@ export function MockExam() {
               {grading && (grading.status === 'queued' || grading.status === 'running') && <small className="fine-print">判卷进行中，通常 1~2 秒完成，请稍候…</small>}
             </div>
           )}
-          {mock.status === 'graded' && grading?.result && (
+          {gradedDone && grading?.result && (
             <div className="status-block">
               <CheckCircle2 size={26} /><p>判卷完成，下面是逐题得分。</p>
               <div className="job-score">{grading.result.totalScore ?? '待评估'}<small> / {grading.result.maxScore} 分</small></div>
@@ -251,7 +254,7 @@ export function MockExam() {
               <button className="button" onClick={startNewMock} disabled={busy}>{busy ? '正在开新卷…' : '再来一套'}<ArrowRight size={17} /></button>
             </div>
           )}
-          {mock.status === 'graded' && !grading?.result && (
+          {gradedDone && !grading?.result && (
             <div className="status-block"><Clock size={26} /><p>已判卷，但结果未加载。</p></div>
           )}
           <div className="side-meta"><Target size={15} />目标 {exam.targetScore} / {exam.maxScore}</div>
