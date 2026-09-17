@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { useParams } from 'react-router-dom'
 import { ArrowRight, BookX, CheckCircle2, ClipboardList, Clock, History, ScanLine, Target, X } from 'lucide-react'
 import { ErrorMessage, MockNotice } from '../../components/Shared'
+import { QuestionScores } from './QuestionScores'
 import { study, type Exam, type Grading, type MockExam, type MockHistoryItem, type MockMistakeItem, type MockQuestion, type MockStudentAnswer } from '../../api/study'
 
 // 5 状态进度条（UI 状态机）
@@ -350,6 +351,7 @@ export function MockExam() {
             <div className="status-block">
               <CheckCircle2 size={26} /><p>判卷完成，下面是逐题得分。</p>
               <div className="job-score">{grading.result.totalScore ?? '待评估'}<small> / {grading.result.maxScore} 分</small></div>
+              <QuestionScores result={grading.result} />
               <button className="button" onClick={startNewMock} disabled={busy}>{busy ? '正在开新卷…' : '再来一套'}<ArrowRight size={17} /></button>
             </div>
           )}
