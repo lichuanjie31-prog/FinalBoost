@@ -9,7 +9,9 @@ from .db import Database
 from .auth import router as auth_router, current_user
 from .common import new_id
 from .business import router as business_router
+from .training import router as training_router
 from .grading import GradingWorker
+from .training_worker import TrainingWorker
 from .schemas import ErrorEnvelope
 
 def create_app(**kwargs):
@@ -24,8 +26,13 @@ def create_app(**kwargs):
             worker.configure_llm(settings)
         app.state.worker = worker
         worker.start()
+        training_worker = TrainingWorker(db)
+        app.state.training_worker = training_worker
+        training_worker.start()
         try: yield
-        finally: worker.close()
+        finally:
+            worker.close()
+            training_worker.close()
     app = FastAPI(title="FinalBoost", version="1.0.0", lifespan=lifespan, responses={code:{"model":ErrorEnvelope} for code in (400,401,403,404,409,413,415,422,429,500)})
     app.state.settings, app.state.db = settings, db
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.origins), allow_credentials=True, allow_methods=["GET","POST"], allow_headers=["Authorization","Content-Type","Idempotency-Key","X-Requested-With"])
@@ -46,6 +53,7 @@ def create_app(**kwargs):
         return {"code":0,"message":"success","data":{"status":"ok","gradingMode":mode},"requestId":new_id()}
     app.include_router(auth_router)
     app.include_router(business_router)
+    app.include_router(training_router)
     return app
 
 app = create_app()

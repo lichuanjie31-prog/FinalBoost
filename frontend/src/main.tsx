@@ -4,5 +4,6 @@ import { App } from './app/App'
 import './styles/global.css'
 import './styles/home.css'
 import './styles/workspace.css'
+import './styles/training.css'
 
 createRoot(document.getElementById('root')!).render(<BrowserRouter><App /></BrowserRouter>)

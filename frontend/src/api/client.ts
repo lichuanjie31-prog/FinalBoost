@@ -33,3 +33,10 @@ export async function request<T>(path: string, options: RequestInit = {}, retry 
 export function post<T>(path: string, body: unknown, key: string = crypto.randomUUID()): Promise<T> {
   return request<T>(path, { method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify(body) })
 }
+export async function download(path: string): Promise<Blob> {
+  const headers = new Headers({ 'X-Requested-With': 'FinalBoost' })
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`)
+  const response = await fetch(`/api/v1${path}`, { headers, credentials: 'include' })
+  if (!response.ok) throw new ApiError(response.status, '文件下载失败，请稍后重试。')
+  return response.blob()
+}
