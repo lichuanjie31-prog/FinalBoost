@@ -214,7 +214,14 @@ def create_mock_exam(exam_id:str,request:Request,user=Depends(current_user),forc
                 (exam_id, user["id"]),
             ).fetchone()
             if existing and (existing["status"] in ("ready","submitted") or not force):
-                return mock_exam_out(existing)
+                # 已判卷的旧卷要带上 gradingId，前端靠它拉判卷结果
+                g = db.execute(
+                    "SELECT id FROM grading_jobs WHERE mock_exam_id=? AND user_id=? ORDER BY created_at DESC LIMIT 1",
+                    (existing["id"], user["id"]),
+                ).fetchone()
+                out_row = dict(existing)
+                out_row["grading_id"] = g["id"] if g else None
+                return mock_exam_out(out_row, include_grading_id=True)
             # 抽题
             questions = mock_bank.pick_for_exam(exam_id)
             if not questions:
