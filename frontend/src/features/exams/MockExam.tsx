@@ -207,8 +207,7 @@ export function MockExam() {
   const phaseIdx = currentPhaseIndex(mock, phase === 'answering', phase === 'failed', grading?.status === 'succeeded')
   const allAnswered = !!mock && mock.questions.every(q => (answers[q.questionId] || '').trim())
   const gradedDone = !!mock && (mock.status === 'graded' || grading?.status === 'succeeded')
-  // 判卷结果按题索引：左侧题目卡标色 / 右栏错题列表都用它
-  const gradeByQ = new Map((grading?.result?.questions ?? []).map(g => [g.questionId, g]))
+  // 右栏错题列表数据源（判卷结果里 correct === false 的题）
   const wrongGrades = (grading?.result?.questions ?? []).filter(g => g.correct === false)
 
   // 错题按考试分组
@@ -289,14 +288,11 @@ export function MockExam() {
             <ol className="mock-readonly-list">
               {mock.questions.map((q, idx) => {
                 const answered = !!(answers[q.questionId] || '').trim()
-                const grade = gradedDone ? gradeByQ.get(q.questionId) : undefined
-                return <li key={q.questionId} id={`mock-q-${q.questionId}`} className={`mock-readonly-item ${answered ? 'is-answered' : ''} ${grade ? (grade.correct ? 'is-correct' : 'is-wrong') : ''}`}>
+                return <li key={q.questionId} id={`mock-q-${q.questionId}`} className={`mock-readonly-item ${answered ? 'is-answered' : ''}`}>
                     <div className="mock-question-legend">
                       <strong>第 {idx + 1} 题 · {q.maxScore} 分</strong>
                       <span className="muted">{q.knowledgePoints.join('、')}</span>
-                      {grade
-                        ? <span className={`mock-result-flag ${grade.correct ? 'is-correct' : 'is-wrong'}`}>{grade.correct ? '答对' : '答错'} {grade.score ?? 0} / {q.maxScore} 分</span>
-                        : answered && <span className="mock-question-flag">已作答</span>}
+                      {answered && <span className="mock-question-flag">已作答</span>}
                     </div>
                     <div className="mock-question-body">
                       <p className="mock-prompt">{q.prompt}</p>

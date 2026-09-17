@@ -226,12 +226,7 @@
 .status-block .job-status-badge{display:inline-block;padding:4px 10px;border-radius:99px;background:var(--surface-warm);font-size:11px;font-family:var(--font-mono)}
 .side-meta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-muted);padding:10px 14px;border-top:1px solid var(--border);font-family:var(--font-mono)}
 
-/* 判卷完成后：题目卡对错标色 + 右栏错题列表 */
-.mock-readonly-item.is-correct{border-color:#6ee7b7;background:#f2fdf7}
-.mock-readonly-item.is-wrong{border-color:#fecaca;background:#fef5f5}
-.mock-result-flag{font-size:11px;font-family:var(--font-mono);padding:3px 8px;border-radius:99px;white-space:nowrap}
-.mock-result-flag.is-correct{background:#ecfdf5;color:#047857}
-.mock-result-flag.is-wrong{background:#fef2f2;color:#b91c1c}
+/* 判卷完成后：右栏错题列表 */
 .mock-all-correct{margin:0;font-size:13px;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:10px 14px}
 .mock-wrong-list{display:flex;flex-direction:column;gap:10px;width:100%}
 .mock-wrong-title{font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);text-align:left}
