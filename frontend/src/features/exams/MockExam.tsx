@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, CheckCircle2, ClipboardList, Clock, ScanLine, Target } from 'lucide-react'
+import { useParams } from 'react-router-dom'
+import { ArrowRight, CheckCircle2, ClipboardList, Clock, History, ScanLine, Target, X } from 'lucide-react'
 import { ErrorMessage, MockNotice } from '../../components/Shared'
-import { study, type Exam, type Grading, type MockExam, type MockQuestion } from '../../api/study'
+import { study, type Exam, type Grading, type MockExam, type MockHistoryItem, type MockQuestion } from '../../api/study'
 import { QuestionScores } from './QuestionScores'
 
 // 5 状态进度条（UI 状态机）
@@ -35,6 +35,10 @@ export function MockExam() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
+  // 判卷历史弹层
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [history, setHistory] = useState<MockHistoryItem[] | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const intent = useRef(crypto.randomUUID())
   const answersRef = useRef(answers); answersRef.current = answers
 
@@ -158,15 +162,29 @@ export function MockExam() {
     finally { setBusy(false) }
   }
 
+  async function openHistory() {
+    setHistoryOpen(true); setHistoryLoading(true)
+    try {
+      // 不传 abort signal：弹层开关由 state 控制，拉取结果直接落地
+      const items = await study.mockHistory(id)
+      setHistory(items)
+    } catch { setHistory([]) }
+    finally { setHistoryLoading(false) }
+  }
+
+  function fmtTime(ts?: number | null) {
+    if (!ts) return '—'
+    return new Date(ts * 1000).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  }
+
   if (loading) return <div className="empty-state" role="status">正在准备最终模拟…</div>
-  if (!exam) return <div className="panel"><ErrorMessage error={error} /><Link className="text-link" to="/app">返回我的备考</Link></div>
+  if (!exam) return <div className="panel"><ErrorMessage error={error} /></div>
 
   const phaseIdx = currentPhaseIndex(mock, phase === 'answering', phase === 'failed', grading?.status === 'succeeded')
   const allAnswered = !!mock && mock.questions.every(q => (answers[q.questionId] || '').trim())
   const gradedDone = !!mock && (mock.status === 'graded' || grading?.status === 'succeeded')
 
   return <>
-    <Link className="text-link back-link" to="/app"><ArrowLeft size={16} />我的备考</Link>
     <div className="workspace-title">
       <div>
         <span className="eyebrow">03 / MOCK EXAM</span>
@@ -307,8 +325,49 @@ export function MockExam() {
           {gradedDone && !grading?.result && (
             <div className="status-block"><Clock size={26} /><p>已判卷，但结果未加载。</p></div>
           )}
+          <button type="button" className="text-button mock-history-trigger" onClick={openHistory}>
+            <History size={15} />判卷历史
+          </button>
           <div className="side-meta"><Target size={15} />目标 {exam.targetScore} / {exam.maxScore}</div>
         </section>
+      </div>
+    )}
+
+    {/* 判卷历史弹层：本场考试全部最终模拟记录 */}
+    {historyOpen && (
+      <div className="mock-history-overlay" role="dialog" aria-modal="true" aria-label="判卷历史" onClick={() => setHistoryOpen(false)}>
+        <div className="mock-history-modal" onClick={e => e.stopPropagation()}>
+          <div className="mock-history-head">
+            <h2><History size={18} />判卷历史</h2>
+            <button type="button" className="icon-button" aria-label="关闭" onClick={() => setHistoryOpen(false)}><X size={18} /></button>
+          </div>
+          {historyLoading ? (
+            <div className="empty-state" role="status">正在加载判卷历史…</div>
+          ) : !history || history.length === 0 ? (
+            <div className="empty-state"><ClipboardList size={28} /><p>还没有模拟记录，做完一套就会出现这里。</p></div>
+          ) : (
+            <ol className="mock-history-list">
+              {history.map((item, idx) => {
+                const n = history.length - idx // 从旧到新编号 → 第 N 次
+                const passed = item.totalScore !== null && exam && item.totalScore >= exam.targetScore
+                return <li key={item.mockExamId} className={`mock-history-item ${item.status === 'graded' ? 'is-graded' : ''}`}>
+                  <span className="mock-history-no">第 {n} 次</span>
+                  {item.status === 'graded' ? (
+                    <strong className="mock-history-score">{item.totalScore ?? '—'}<small> / {item.maxScore}</small></strong>
+                  ) : (
+                    <span className="mock-history-unfinished">{item.status === 'submitted' ? '判卷中' : '未完成'}</span>
+                  )}
+                  {item.status === 'graded' && exam && (
+                    <span className={`mock-history-flag ${passed ? 'is-pass' : 'is-gap'}`}>
+                      {passed ? `达标（目标 ${exam.targetScore}）` : `距目标 ${Math.max(0, exam.targetScore - (item.totalScore ?? 0))} 分`}
+                    </span>
+                  )}
+                  <span className="mock-history-time">{fmtTime(item.gradedAt || item.submittedAt || item.createdAt)}</span>
+                </li>
+              })}
+            </ol>
+          )}
+        </div>
       </div>
     )}
 

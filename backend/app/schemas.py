@@ -190,3 +190,13 @@ class MockExamSubmitIn(StrictModel):
         ids = [a.questionId for a in value]
         if len(set(ids)) != len(ids): raise ValueError("duplicate questionIds in answers")
         return value
+
+class MockHistoryItem(BaseModel):
+    """判卷历史列表项：一次最终模拟的简要结果（不含题目明细）。"""
+    mockExamId: str
+    status: Literal["ready", "submitted", "graded"]
+    totalScore: float | None = None
+    maxScore: float
+    createdAt: float
+    submittedAt: float | None = None
+    gradedAt: float | None = None

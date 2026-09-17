@@ -12,7 +12,7 @@ from PIL import Image, UnidentifiedImageError
 from .auth import current_user
 from .common import envelope, fail, new_id
 from .idempotency import execute
-from .schemas import Envelope, Page, ExamIn, ExamOut, FileOut, GradingIn, GradingAccepted, GradingOut, DiagnosisIn, DiagnosisOut, MockExamOut, MockExamSubmitIn, MockQuestionPublic
+from .schemas import Envelope, Page, ExamIn, ExamOut, FileOut, GradingIn, GradingAccepted, GradingOut, DiagnosisIn, DiagnosisOut, MockExamOut, MockExamSubmitIn, MockQuestionPublic, MockHistoryItem
 from . import mock_bank
 
 router=APIRouter(prefix="/api/v1",tags=["study"])
@@ -288,3 +288,33 @@ def submit_mock_exam(exam_id:str,mock_exam_id:str,body:MockExamSubmitIn,request:
             row = owned(db,"mock_exams",mock_exam_id,user["id"])
             return mock_exam_out(row)
         return execute(db, user["id"], request, body.model_dump(mode="json"), 200, create)
+
+
+@router.get("/exams/{exam_id}/mock-history",response_model=Envelope[list[MockHistoryItem]])
+def list_mock_history(exam_id:str,request:Request,user=Depends(current_user)):
+    """本场考试的全部最终模拟记录（判卷历史），按创建时间倒序。
+
+    已判卷的记录附带最近一次成功判卷的 totalScore（重试取最新一次）。
+    """
+    with request.app.state.db.transaction() as db:
+        owned(db,"exams",exam_id,user["id"])
+        rows=db.execute(
+            "SELECT m.id, m.status, m.questions_json, m.created_at, m.submitted_at, m.graded_at,"
+            " (SELECT g.result_json FROM grading_jobs g WHERE g.mock_exam_id=m.id AND g.status='succeeded'"
+            "  ORDER BY g.created_at DESC LIMIT 1) AS result_json"
+            " FROM mock_exams m WHERE m.user_id=? AND m.exam_id=? ORDER BY m.created_at DESC, m.id DESC",
+            (user["id"],exam_id),
+        ).fetchall()
+        items=[]
+        for r in rows:
+            questions=json.loads(r["questions_json"])
+            total=None
+            if r["result_json"]:
+                try: total=json.loads(r["result_json"]).get("totalScore")
+                except (ValueError, TypeError): total=None
+            items.append(MockHistoryItem(
+                mockExamId=r["id"],status=r["status"],totalScore=total,
+                maxScore=sum(q["maxScore"] for q in questions),
+                createdAt=r["created_at"],submittedAt=r["submitted_at"],gradedAt=r["graded_at"],
+            ).model_dump())
+        return envelope(items)

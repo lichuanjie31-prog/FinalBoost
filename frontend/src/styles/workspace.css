@@ -263,6 +263,28 @@
 #mock-result-block.is-flashing{animation:mock-result-flash 1.2s ease-out}
 @keyframes mock-result-flash{0%{background:var(--surface-warm);box-shadow:0 0 0 4px var(--surface-warm)}100%{background:transparent;box-shadow:0 0 0 0 transparent}}
 
+/* 判卷历史：入口按钮 + 弹层 */
+.mock-history-trigger{justify-content:center;width:100%;padding:10px 0;border-top:1px solid var(--border-light);border-radius:0}
+.mock-history-overlay{position:fixed;inset:0;z-index:60;background:rgba(24,24,27,.4);display:flex;align-items:center;justify-content:center;padding:20px;animation:mock-history-fade .15s ease-out}
+@keyframes mock-history-fade{from{opacity:0}to{opacity:1}}
+.mock-history-modal{width:min(520px,100%);max-height:min(70vh,560px);overflow-y:auto;background:white;border-radius:var(--radius);box-shadow:0 20px 50px rgba(0,0,0,.25);padding:20px 22px;animation:mock-history-rise .2s cubic-bezier(.34,1.3,.64,1)}
+@keyframes mock-history-rise{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+.mock-history-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.mock-history-head h2{display:inline-flex;align-items:center;gap:8px;font-size:16px;margin:0;letter-spacing:-.02em}
+.mock-history-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.mock-history-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:white;flex-wrap:wrap}
+.mock-history-item.is-graded{border-color:var(--ink-soft)}
+.mock-history-no{font-size:12px;font-family:var(--font-mono);color:var(--ink-soft);min-width:52px}
+.mock-history-score{font-family:var(--font-mono);font-size:18px;font-weight:600;letter-spacing:-.02em;line-height:1;color:var(--ink)}
+.mock-history-score small{font-size:11px;color:var(--ink-muted);font-weight:400;margin-left:3px}
+.mock-history-unfinished{font-size:12px;color:var(--ink-muted);font-family:var(--font-mono)}
+.mock-history-flag{margin-left:auto;font-size:11px;font-family:var(--font-mono);padding:3px 8px;border-radius:99px}
+.mock-history-flag.is-pass{background:#ecfdf5;color:#047857}
+.mock-history-flag.is-gap{background:#fef3c7;color:#92400e}
+.mock-history-time{font-size:11px;color:var(--ink-muted);font-family:var(--font-mono)}
+.mock-history-item.is-graded .mock-history-time{margin-left:auto}
+.mock-history-item.is-graded .mock-history-flag+.mock-history-time{margin-left:0}
+
 /* 最终模拟板块页（/app/mock）：按考试聚合的卡片网格 */
 .mock-hub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:8px}
 .mock-hub-card{display:flex;flex-direction:column;gap:10px;padding:20px 22px;background:white;border:1px solid var(--border);border-radius:var(--radius);transition:border-color .15s,box-shadow .15s}

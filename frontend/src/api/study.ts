@@ -29,6 +29,15 @@ export type MockExam = {
   gradingId?: string | null
 }
 export type MockStudentAnswer = { questionId: string; answer: string }
+export type MockHistoryItem = {
+  mockExamId: string
+  status: 'ready' | 'submitted' | 'graded'
+  totalScore: number | null
+  maxScore: number
+  createdAt: number
+  submittedAt?: number | null
+  gradedAt?: number | null
+}
 
 async function allPages<T>(path: string, signal?: AbortSignal): Promise<T[]> {
   const items: T[] = []
@@ -63,4 +72,6 @@ export const study = {
   // 触发判卷（已 submitted 后调）
   gradeMock: (examId: string, mockExamId: string, key: string) =>
     post<components['schemas']['GradingAccepted']>('/grading', { examId, mockExamId }, key),
+  // 判卷历史：本场考试全部最终模拟记录（新→旧）
+  mockHistory: (examId: string, signal?: AbortSignal) => request<MockHistoryItem[]>(`/exams/${examId}/mock-history`, { signal }),
 }
