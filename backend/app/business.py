@@ -325,6 +325,7 @@ def list_mock_mistakes(request:Request,user=Depends(current_user)):
     """用户全部最终模拟错题集：把所有已成功判卷的 mock 里 score<maxScore 的题目抽出来。
 
     按判卷时间倒序，方便学生从最近一次的薄弱点开始复盘。
+    同一道题（questionId 相同）多次答错只保留最近一次，避免错题集被重复刷屏。
     """
     with request.app.state.db.transaction() as db:
         rows=db.execute(
@@ -337,7 +338,9 @@ def list_mock_mistakes(request:Request,user=Depends(current_user)):
             " ORDER BY g.created_at DESC, g.id DESC",
             (user["id"],),
         ).fetchall()
+        # rows 按 graded_at 倒序：第一次遇到的题就是最近一次答错的记录
         items=[]
+        seen={}
         for r in rows:
             try:
                 result=json.loads(r["result_json"])
@@ -349,8 +352,10 @@ def list_mock_mistakes(request:Request,user=Depends(current_user)):
             a_lookup={a["questionId"]:a.get("answer","") for a in answers}
             for gq in result.get("questions",[]):
                 if gq.get("correct") is True: continue
+                if gq["questionId"] in seen: continue
                 q=q_lookup.get(gq["questionId"])
                 if not q: continue
+                seen[gq["questionId"]]=True
                 items.append(MockMistakeItem(
                     mockExamId=r["mock_exam_id"],
                     examId=r["exam_id"],

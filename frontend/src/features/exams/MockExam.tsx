@@ -62,6 +62,11 @@ export function MockExam() {
             setPhase('result')
           } else if (m.status === 'submitted') {
             setPhase('grading')
+            // 已有判卷任务就拉一次，让轮询 effect 接手
+            if (m.gradingId) {
+              const g = await study.grading(m.gradingId, controller.signal).catch(() => null)
+              if (!controller.signal.aborted && g) setGrading(g)
+            }
           } else {
             setPhase('ready')
           }
@@ -78,6 +83,38 @@ export function MockExam() {
     })()
     return () => controller.abort()
   }, [id])
+
+  // 判卷轮询：submitted 状态下每 1.5s 拉一次判卷任务，succeeded/failed 后停止。
+  // 这段曾经丢失过（重写文件时被删），导致页面永远卡在"判卷中"——务必保留。
+  useEffect(() => {
+    if (!mock || mock.status !== 'submitted') return
+    if (!grading || grading.status === 'succeeded' || grading.status === 'failed') return
+    let cancelled = false
+    const timer = setInterval(async () => {
+      try {
+        const g = await study.grading(grading.gradingId)
+        if (cancelled) return
+        setGrading(g)
+        if (g.status === 'succeeded') {
+          // 注意：成功路径不传 abort signal（历史 race-condition 教训），
+          // 让结果正常落地而不是被上一次 effect cleanup 掐断
+          const m = await study.getMock(id, mock.mockExamId).catch(() => null)
+          if (cancelled) return
+          if (m) {
+            setMock(m)
+            const refreshed: Record<string, string> = {}
+            for (const q of m.questions) if (q.studentAnswer) refreshed[q.questionId] = q.studentAnswer
+            setAnswers(prev => ({ ...prev, ...refreshed }))
+          }
+          setPhase('result')
+        } else if (g.status === 'failed') {
+          setPhase('failed')
+          setError(g.error?.message || '判卷失败')
+        }
+      } catch { /* 网络抖动：下一轮再试 */ }
+    }, 1500)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [mock, grading, id])
 
   function selectAnswer(questionId: string, answer: string) {
     setAnswers(prev => ({ ...prev, [questionId]: answer }))
