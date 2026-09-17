@@ -230,3 +230,19 @@
 .is-disabled{opacity:.5;cursor:not-allowed}
 
 .mock-questions-panel .form-stack{display:flex;flex-direction:column;gap:18px}
+
+/* 答题卡（最终模拟作答阶段） */
+.answer-card{padding:16px 18px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
+.answer-card-head{display:flex;justify-content:space-between;align-items:center}
+.answer-card-head h3{font-size:13px;font-weight:600;color:var(--ink);margin:0}
+.answer-card-head .muted{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted)}
+.answer-card-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;list-style:none;padding:0;margin:0}
+.answer-cell{aspect-ratio:1/1;border:1px solid var(--border);border-radius:8px;background:white;font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--ink-soft);cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;padding:0}
+.answer-cell:hover{border-color:var(--ink);color:var(--ink);background:var(--surface-warm)}
+.answer-cell.is-answered{background:var(--ink);color:#fff;border-color:var(--ink)}
+.answer-cell.is-answered:hover{background:#27272a}
+.answer-cell.is-empty:hover{color:var(--ink)}
+.answer-card .fine-print{font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);margin-top:2px}
+
+/* 题目跳转锚点高亮 */
+.mock-question:target{outline:2px solid var(--ink);outline-offset:4px;scroll-margin-top:24px}

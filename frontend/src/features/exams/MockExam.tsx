@@ -102,6 +102,15 @@ export function MockExam() {
     setAnswers(old => ({ ...old, [questionId]: value }))
   }
 
+  function jumpToQuestion(questionId: string) {
+    const el = document.getElementById(`mock-q-${questionId}`)
+    if (!el) return
+    el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    // 把焦点放到第一道题的选项/文本框（让键盘 / 移动端可以直接作答）
+    const focusTarget = el.querySelector('textarea, input[type="radio"]') as HTMLElement | null
+    focusTarget?.focus({ preventScroll: true })
+  }
+
   async function submitAnswers(event: FormEvent) {
     event.preventDefault()
     if (!mock) return
@@ -190,7 +199,7 @@ export function MockExam() {
           {mock.status === 'ready' ? (
             <form onSubmit={submitAnswers} className="form-stack">
               {mock.questions.map((q, idx) => (
-                <fieldset key={q.questionId} className="mock-question">
+                <fieldset key={q.questionId} id={`mock-q-${q.questionId}`} className="mock-question">
                   <legend><strong>第 {idx + 1} 题</strong><span className="muted">{q.knowledgePoints.join('、')} · {q.maxScore} 分</span></legend>
                   <p className="mock-prompt">{q.prompt}</p>
                   {q.options?.length ? (
@@ -234,6 +243,30 @@ export function MockExam() {
             <div className="status-block">
               <Clock size={26} /><p>试卷已生成，请尽快作答并提交。</p>
               <small className="fine-print">系统从内置示例题库抽题，与正式题库解耦；后续接入真题库时无需改动本页面。</small>
+            </div>
+          )}
+          {mock.status === 'ready' && (
+            <div className="answer-card">
+              <div className="answer-card-head">
+                <h3>答题卡</h3>
+                <span className="muted">
+                  {mock.questions.filter(q => (answers[q.questionId] || '').trim()).length} / {mock.questions.length} 已作答
+                </span>
+              </div>
+              <div className="answer-card-grid" role="list">
+                {mock.questions.map((q, idx) => {
+                  const isAnswered = !!(answers[q.questionId] || '').trim()
+                  return <button
+                    key={q.questionId}
+                    type="button"
+                    role="listitem"
+                    className={`answer-cell ${isAnswered ? 'is-answered' : 'is-empty'}`}
+                    onClick={() => jumpToQuestion(q.questionId)}
+                    aria-label={`第 ${idx + 1} 题，${isAnswered ? '已作答' : '未作答'}，点击跳转`}
+                  >{idx + 1}</button>
+                })}
+              </div>
+              <small className="fine-print">点击题号可跳转到对应题目。</small>
             </div>
           )}
           {mock.status === 'submitted' && !gradedDone && (
