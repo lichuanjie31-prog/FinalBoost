@@ -277,3 +277,11 @@
 .mock-hub-status.is-submitted{background:#fef3c7;color:#92400e}
 .mock-hub-bottom{display:flex;justify-content:space-between;align-items:center;margin-top:auto;padding-top:8px;border-top:1px solid var(--border-light)}
 .mock-hub-bottom .muted strong{color:var(--ink);font-family:var(--font-mono)}
+.mock-hub-score{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border-light);border-radius:8px;background:var(--surface-warm);flex-wrap:wrap}
+.mock-hub-score .muted{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted);margin:0}
+.mock-hub-score strong{font-size:22px;font-weight:600;font-family:var(--font-mono);letter-spacing:-.02em;line-height:1;color:var(--ink)}
+.mock-hub-score strong small{font-size:12px;color:var(--ink-muted);font-weight:400;margin-left:4px}
+.mock-hub-score.is-target{background:#ecfdf5;border-color:#a7f3d0}
+.mock-hub-score.is-target strong{color:#047857}
+.mock-hub-score-flag{margin-left:auto;font-size:11px;font-family:var(--font-mono);padding:3px 8px;border-radius:99px;background:var(--ink);color:#fff}
+.mock-hub-score-flag.is-gap{background:#fef3c7;color:#92400e}

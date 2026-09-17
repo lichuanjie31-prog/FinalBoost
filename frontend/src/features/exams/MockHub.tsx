@@ -4,7 +4,7 @@ import { ArrowRight, CalendarDays, ScanLine, Target } from 'lucide-react'
 import { ErrorMessage, EmptyState, MockNotice } from '../../components/Shared'
 import { study, type Exam, type MockExam } from '../../api/study'
 
-type Row = { exam: Exam; mock: MockExam | null }
+type Row = { exam: Exam; mock: MockExam | null; lastScore: number | null }
 
 const STATUS_LABEL: Record<MockExam['status'] | 'none', string> = {
   none: '未开始',
@@ -43,9 +43,15 @@ export function MockHub() {
         const results = await Promise.all(exams.map(async exam => {
           try {
             const mock = await study.createMock(exam.examId, crypto.randomUUID())
-            return { exam, mock }
+            // 已判卷的 mock 顺手把分数也拉回来，板块页卡片直接展示
+            let lastScore: number | null = null
+            if (mock.status === 'graded' && mock.gradingId) {
+              const g = await study.grading(mock.gradingId).catch(() => null)
+              lastScore = g?.result?.totalScore ?? null
+            }
+            return { exam, mock, lastScore }
           } catch {
-            return { exam, mock: null }
+            return { exam, mock: null, lastScore: null }
           }
         }))
         if (controller.signal.aborted) return
@@ -80,8 +86,9 @@ export function MockHub() {
       </EmptyState>
     ) : (
       <div className="mock-hub-grid">
-        {rows.map(({ exam, mock }) => {
+        {rows.map(({ exam, mock, lastScore }) => {
           const statusKey = (mock ? mock.status : 'none') as keyof typeof STATUS_LABEL
+          const scoreReachedTarget = lastScore !== null && lastScore >= exam.targetScore
           return <article className="mock-hub-card" key={exam.examId}>
             <div className="card-top">
               <span className="tag">{exam.remainingDays} 天后考试</span>
@@ -90,6 +97,15 @@ export function MockHub() {
             <h2>{exam.course}</h2>
             <p className="muted"><CalendarDays size={15} />{exam.examDate}</p>
             <p className="mock-hub-hint">{STATUS_HINT[statusKey]}</p>
+            {statusKey === 'graded' && lastScore !== null && (
+              <div className={`mock-hub-score ${scoreReachedTarget ? 'is-target' : ''}`}>
+                <span className="muted">上次成绩</span>
+                <strong>{lastScore}<small> / {exam.maxScore}</small></strong>
+                {scoreReachedTarget
+                  ? <span className="mock-hub-score-flag">已达目标 {exam.targetScore}</span>
+                  : <span className="mock-hub-score-flag is-gap">距目标还差 {exam.targetScore - lastScore} 分</span>}
+              </div>
+            )}
             <div className="mock-hub-bottom">
               <span className="muted">目标 <strong>{exam.targetScore}</strong> / {exam.maxScore}</span>
               <Link className="button button-quiet" to={`/app/exams/${exam.examId}/mock`}>{CTA_LABEL[statusKey]}<ArrowRight size={17} /></Link>
