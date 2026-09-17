@@ -239,6 +239,35 @@ class GradingWorker:
 
     def _execute_grading(self, db, row):
         """Execute grading for a single job. Returns result dict or None on failure."""
+        # 最终模拟（mock exam）判卷：不调 LLM，直接对比标准答案和学生作答
+        if row["mock_exam_id"]:
+            try:
+                mock_row = db.execute(
+                    "SELECT questions_json, answers_json, status FROM mock_exams WHERE id=?",
+                    (row["mock_exam_id"],),
+                ).fetchone()
+                if mock_row is None:
+                    logging.getLogger(__name__).error("mock_exam %s not found", row["mock_exam_id"])
+                    return None
+                if mock_row["status"] != "submitted":
+                    logging.getLogger(__name__).error("mock_exam %s not in submitted state", row["mock_exam_id"])
+                    return None
+                result = self._grade_mock_exam(mock_row)
+                # 推进 mock_exams 状态 + 时间戳
+                db.execute(
+                    "UPDATE mock_exams SET status='graded', graded_at=? WHERE id=?",
+                    (time.time(), row["mock_exam_id"]),
+                )
+                # 推进 exam 的 stage 到 completed
+                db.execute(
+                    "UPDATE exams SET stage='completed' WHERE id=? AND stage != 'completed'",
+                    (row["exam_id"],),
+                )
+                return result
+            except Exception:
+                logging.getLogger(__name__).exception("Mock exam grading failed for job %s", row["id"])
+                return None
+
         # Mock scenario jobs use mock grader
         if row["scenario"] in ("unreadable", "provider_error", "timeout"):
             if isinstance(self.provider, LlmGrader):
@@ -269,3 +298,78 @@ class GradingWorker:
 
         # Mock grader: return fixed result
         return self.provider.result()
+
+    def _grade_mock_exam(self, mock_row) -> dict:
+        """对比 mock_exam 的标准答案和学生作答，生成 GradingResult。
+
+        评分规则：
+        - 选择题（options 非空）：精确匹配选项 label 得满分，否则 0
+        - 简答题（options 为空）：精确匹配得满分；包含匹配得 80%；其他得 0
+        """
+        questions = json.loads(mock_row["questions_json"])
+        answers = json.loads(mock_row["answers_json"])
+        answer_lookup = {a["questionId"]: a.get("answer", "").strip() for a in answers}
+
+        graded = []
+        total_score = 0.0
+        max_total = 0.0
+        for q in questions:
+            qid = q["questionId"]
+            student = answer_lookup.get(qid, "")
+            correct = q["correctAnswer"].strip()
+            max_score = float(q["maxScore"])
+            max_total += max_score
+            is_choice = bool(q.get("options"))
+
+            if not student:
+                # 未作答
+                score = 0.0
+                error_type = "missing_answer"
+                error_reason = "未作答"
+                correct_flag = False
+            elif is_choice:
+                if student.upper() == correct.upper():
+                    score = max_score
+                    error_type = None
+                    error_reason = None
+                    correct_flag = True
+                else:
+                    score = 0.0
+                    error_type = "concept_error"
+                    error_reason = f"正确答案 {correct}"
+                    correct_flag = False
+            else:
+                # 简答题：完全匹配 > 包含匹配 > 其他
+                if student == correct:
+                    score = max_score
+                    error_type = None
+                    error_reason = None
+                    correct_flag = True
+                elif correct and (correct in student or student in correct):
+                    score = round(max_score * 0.8, 1)
+                    error_type = "method_error"
+                    error_reason = "答案部分匹配"
+                    correct_flag = False
+                else:
+                    score = 0.0
+                    error_type = "concept_error"
+                    error_reason = "答案不匹配"
+                    correct_flag = False
+
+            total_score += score
+            graded.append({
+                "questionId": qid,
+                "score": round(score, 1),
+                "maxScore": max_score,
+                "correct": correct_flag,
+                "knowledgePointIds": q.get("knowledgePointIds", []),
+                "knowledgePoints": q.get("knowledgePoints", []),
+                "errorType": error_type,
+                "errorReason": error_reason,
+            })
+
+        return {
+            "totalScore": round(total_score, 1),
+            "maxScore": round(max_total, 1),
+            "questions": graded,
+        }

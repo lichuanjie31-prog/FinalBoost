@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { ArrowRight, BookOpen, CalendarDays, LogOut, Plus, ScanLine, Target, X } from 'lucide-react'
 import { useAuth } from '../../app/auth'
 import { Brand, ErrorMessage, EmptyState, MockNotice } from '../../components/Shared'
@@ -7,12 +7,16 @@ import { study, type Exam } from '../../api/study'
 
 export function WorkspaceLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth(), navigate = useNavigate()
+  const { id: examId } = useParams()
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   async function signOut() {
     setBusy(true); setError('')
     try { await logout(); navigate('/login', { replace:true }) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
-  return <div className="workspace"><header className="workspace-header"><Brand /><div><span className="account-name">{user?.username}</span><button className="text-button" onClick={signOut} disabled={busy}><LogOut size={16} />退出登录</button></div></header><div className="workspace-body"><aside className="workspace-nav"><span className="tiny-label">学习空间</span><Link className="nav-selected" to="/app"><BookOpen size={18} />我的备考</Link><span><Target size={18} />专项训练<small>规划中</small></span><span><ScanLine size={18} />最终模拟<small>规划中</small></span><div className="nav-note">从一份试卷开始，<br />找到复习的下一步。</div><Link className="text-link" to="/">返回首页<ArrowRight size={14} /></Link></aside><main id="main" tabIndex={-1} className="workspace-main"><ErrorMessage error={error} />{children}</main></div></div>
+  // 最终模拟链接：如果当前在某个 exam 详情/mock 页面，链接到该 exam 的 mock；否则禁用
+  const mockTo = examId ? `/app/exams/${examId}/mock` : '#'
+  const mockDisabled = !examId
+  return <div className="workspace"><header className="workspace-header"><Brand /><div><span className="account-name">{user?.username}</span><button className="text-button" onClick={signOut} disabled={busy}><LogOut size={16} />退出登录</button></div></header><div className="workspace-body"><aside className="workspace-nav"><span className="tiny-label">学习空间</span><Link className="nav-selected" to="/app"><BookOpen size={18} />我的备考</Link><span><Target size={18} />专项训练<small>规划中</small></span>{mockDisabled ? <span className="is-disabled"><ScanLine size={18} />最终模拟<small>请先进入考试</small></span> : <Link to={mockTo}><ScanLine size={18} />最终模拟</Link>}<div className="nav-note">从一份试卷开始，<br />找到复习的下一步。</div><Link className="text-link" to="/">返回首页<ArrowRight size={14} /></Link></aside><main id="main" tabIndex={-1} className="workspace-main"><ErrorMessage error={error} />{children}</main></div></div>
 }
 
 function shanghaiDate() {

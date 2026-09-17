@@ -71,11 +71,15 @@ class FileOut(BaseModel):
 
 class GradingIn(StrictModel):
     examId: str
-    fileIds: list[str] = Field(min_length=1, max_length=10)
+    # 最终模拟判卷不带图片；普通图片判卷必须至少 1 张（在 validator 里区分）
+    fileIds: list[str] = Field(default_factory=list, max_length=10)
     paperId: str | None = None
     mockExamId: str | None = None
     @model_validator(mode="after")
     def valid(self):
+        if self.mockExamId:
+            if self.fileIds: raise ValueError("fileIds must be empty when mockExamId is set")
+        elif len(self.fileIds) < 1: raise ValueError("fileIds must contain at least 1 item")
         if len(set(self.fileIds)) != len(self.fileIds): raise ValueError("duplicate fileIds")
         if self.paperId and self.mockExamId: raise ValueError("paperId and mockExamId are mutually exclusive")
         return self
@@ -130,3 +134,59 @@ class DiagnosisOut(BaseModel):
     outline: list[OutlineItem]
     weakPoints: list[WeakPoint]
     source: Literal["mock", "provider"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 最终模拟（mock exam）相关模型 —— 对应 API 文档 v1.0 第 15 节
+# 注意：返回给前端的题目结构**不包含** correctAnswer，避免学生拿到答案
+# ─────────────────────────────────────────────────────────────────────────
+
+class MockOption(BaseModel):
+    label: str  # "A" / "B" / "C" / "D"
+    text: str
+
+class MockQuestionInternal(BaseModel):
+    """题库里的原始题目（含标准答案），仅后端内部使用。"""
+    questionId: str
+    prompt: str
+    options: list[MockOption] | None = None
+    maxScore: float
+    knowledgePointIds: list[str]
+    knowledgePoints: list[str]
+    correctAnswer: str  # 选择题是选项 label；简答题是参考答案
+
+class MockQuestionPublic(BaseModel):
+    """暴露给前端的题目（不含标准答案）。"""
+    questionId: str
+    prompt: str
+    options: list[MockOption] | None = None
+    maxScore: float
+    knowledgePointIds: list[str]
+    knowledgePoints: list[str]
+
+class MockStudentAnswer(BaseModel):
+    questionId: str
+    answer: str
+    answeredAt: float | None = None
+
+class MockExamOut(BaseModel):
+    mockExamId: str
+    examId: str
+    status: Literal["ready", "submitted", "graded"]
+    questions: list[MockQuestionPublic]
+    maxScore: float
+    createdAt: float
+    submittedAt: float | None = None
+    gradedAt: float | None = None
+    gradingId: str | None = None  # 判卷完成后回填
+
+class MockExamSubmitIn(StrictModel):
+    """学生提交作答。"""
+    answers: list[MockStudentAnswer]
+    @field_validator("answers")
+    @classmethod
+    def non_empty(cls, value):
+        if not value: raise ValueError("answers must not be empty")
+        ids = [a.questionId for a in value]
+        if len(set(ids)) != len(ids): raise ValueError("duplicate questionIds in answers")
+        return value

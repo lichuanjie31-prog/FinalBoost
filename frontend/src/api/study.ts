@@ -7,6 +7,29 @@ export type Diagnosis = components['schemas']['DiagnosisOut']
 export type UploadedFile = components['schemas']['FileOut']
 export type AuthResult = components['schemas']['AuthOut']
 
+// 最终模拟（mock exam）类型 —— 手写包装，等后端 /openapi.json 导出后再迁到 generated.ts
+export type MockQuestion = {
+  questionId: string
+  prompt: string
+  options?: { label: string; text: string }[] | null
+  maxScore: number
+  knowledgePointIds: string[]
+  knowledgePoints: string[]
+  studentAnswer?: string
+}
+export type MockExam = {
+  mockExamId: string
+  examId: string
+  status: 'ready' | 'submitted' | 'graded'
+  questions: MockQuestion[]
+  maxScore: number
+  createdAt: number
+  submittedAt?: number | null
+  gradedAt?: number | null
+  gradingId?: string | null
+}
+export type MockStudentAnswer = { questionId: string; answer: string }
+
 async function allPages<T>(path: string, signal?: AbortSignal): Promise<T[]> {
   const items: T[] = []
   let cursor: string | null = null
@@ -29,4 +52,15 @@ export const study = {
     const body = new FormData(); body.append('file', file)
     return request<UploadedFile>('/files/images', { method:'POST', body, headers:{ 'Idempotency-Key':key } })
   },
+  // ─────────── 最终模拟（mock exam）── API 文档 v1.0 第 15 节 ───────────
+  // 创建/获取最终模拟卷（force=true 强制开新卷，用于"再来一套"）
+  createMock: (examId: string, key: string, force = false) => post<MockExam>(`/exams/${examId}/mock${force ? '?force=true' : ''}`, {}, key),
+  // 查询最终模拟卷（含题目 + 学生作答，不含标准答案）
+  getMock: (examId: string, mockExamId: string, signal?: AbortSignal) => request<MockExam>(`/exams/${examId}/mock/${mockExamId}`, { signal }),
+  // 学生提交作答（ready → submitted）
+  submitMock: (examId: string, mockExamId: string, answers: MockStudentAnswer[], key: string) =>
+    post<MockExam>(`/exams/${examId}/mock/${mockExamId}/submit`, { answers }, key),
+  // 触发判卷（已 submitted 后调）
+  gradeMock: (examId: string, mockExamId: string, key: string) =>
+    post<components['schemas']['GradingAccepted']>('/grading', { examId, mockExamId }, key),
 }

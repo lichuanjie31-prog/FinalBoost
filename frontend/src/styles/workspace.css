@@ -177,4 +177,56 @@
   .empty-state{padding:40px 0}
   .empty-state h2{font-size:20px}
   .create-dialog{padding:22px}
+  .phase-track{grid-template-columns:repeat(5,minmax(0,1fr));font-size:10px;gap:6px}
+  .phase{padding:10px 6px}
+  .phase-dot{width:8px;height:8px}
 }
+
+/* ─────────── 最终模拟（mock exam）样式 ─────────── */
+.phase-track{list-style:none;padding:0;margin:0 0 24px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.phase{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-radius:var(--radius);background:var(--surface-warm);border:1px solid var(--border);font-size:12px;color:var(--ink-muted);font-family:var(--font-mono);letter-spacing:.5px;position:relative}
+.phase-dot{width:10px;height:10px;border-radius:50%;background:var(--border);transition:background .2s,box-shadow .2s}
+.phase.is-reached{background:white;color:var(--ink-soft);border-color:#d4d4d8}
+.phase.is-reached .phase-dot{background:var(--ink)}
+.phase.is-current{background:white;color:var(--ink);border-color:var(--ink);font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.phase.is-current .phase-dot{background:var(--ink);box-shadow:0 0 0 4px rgba(24,24,27,.12)}
+
+.mock-cta-panel{display:flex;flex-direction:column;gap:12px}
+.mock-cta-panel .button{justify-content:center}
+.tag-accent{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+.mock-questions-panel{gap:18px}
+.mock-question{border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;background:white;margin:0}
+.mock-question legend{display:flex;justify-content:space-between;align-items:center;width:100%;padding:0 0 8px;font-size:13px}
+.mock-question legend strong{font-size:14px}
+.mock-question legend .muted{font-size:11px;font-family:var(--font-mono)}
+.mock-prompt{font-size:14px;line-height:1.7;color:var(--ink);margin:8px 0 14px;white-space:pre-wrap}
+.mock-options{display:flex;flex-direction:column;gap:8px}
+.mock-option{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;font-size:13px;line-height:1.5}
+.mock-option:hover{border-color:var(--ink-soft);background:var(--surface-warm)}
+.mock-option.is-checked{border-color:var(--ink);background:#f4f4f5}
+.mock-option input[type=radio]{margin:0}
+.mock-option .opt-label{font-weight:600;font-family:var(--font-mono);font-size:12px;color:var(--ink-soft);min-width:18px}
+.mock-options.readonly{display:flex;flex-direction:column;gap:4px;list-style:none;padding:0;margin:0;font-size:12px;color:var(--ink-soft)}
+.mock-options.readonly li{padding:6px 10px;border-radius:6px}
+.mock-options.readonly li.is-checked{background:var(--ink);color:#fff}
+.mock-question textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;resize:vertical}
+.mock-question textarea:focus{outline:none;border-color:var(--ink)}
+.mock-readonly-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px}
+.mock-readonly-item{background:white;border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px}
+.mock-readonly-item>div{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.mock-readonly-item .muted{font-size:11px;font-family:var(--font-mono)}
+.mock-text-answer{background:var(--surface-warm);padding:10px 12px;border-radius:6px;font-size:13px;white-space:pre-wrap;margin:8px 0 0}
+
+.mock-side-panel{display:flex;flex-direction:column;gap:16px}
+.status-block{display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 16px;text-align:center}
+.status-block p{margin:0;font-size:13px;color:var(--ink-soft);line-height:1.6}
+.status-block .job-score{font-family:var(--font-mono);font-size:38px;font-weight:600;color:var(--ink);letter-spacing:-.02em;line-height:1}
+.status-block .job-score small{font-size:14px;color:var(--ink-muted);font-weight:400;margin-left:6px}
+.status-block .job-status-badge{display:inline-block;padding:4px 10px;border-radius:99px;background:var(--surface-warm);font-size:11px;font-family:var(--font-mono)}
+.side-meta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-muted);padding:10px 14px;border-top:1px solid var(--border);font-family:var(--font-mono)}
+.form-row{display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--border-light)}
+.form-row .muted{font-size:12px}
+.is-disabled{opacity:.5;cursor:not-allowed}
+
+.mock-questions-panel .form-stack{display:flex;flex-direction:column;gap:18px}
