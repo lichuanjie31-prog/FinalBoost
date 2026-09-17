@@ -191,10 +191,6 @@
 .phase.is-current{background:white;color:var(--ink);border-color:var(--ink);font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.08)}
 .phase.is-current .phase-dot{background:var(--ink);box-shadow:0 0 0 4px rgba(24,24,27,.12)}
 
-.mock-cta-panel{display:flex;flex-direction:column;gap:12px}
-.mock-cta-panel .button{justify-content:center}
-.tag-accent{background:var(--ink);color:#fff;border-color:var(--ink)}
-
 .mock-questions-panel{gap:18px}
 .mock-question{border:1px solid var(--border);border-radius:var(--radius);padding:18px 20px;background:white;margin:0}
 .mock-question legend{display:flex;justify-content:space-between;align-items:center;width:100%;padding:0 0 8px;font-size:13px}
