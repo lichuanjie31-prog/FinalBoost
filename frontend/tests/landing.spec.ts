@@ -4,8 +4,8 @@ for (const width of [390, 768, 1440]) {
   test(`首页和账号页面在 ${width}px 可操作`, async ({ page }) => {
     await page.setViewportSize({ width, height: 1000 })
     await page.goto('/')
-    await expect(page.getByRole('heading', { name: '把有限的时间，用在值得复习的地方。' })).toBeVisible()
-    await expect(page.getByText('示例诊断', { exact: true })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '把时间留给真正学懂的那一刻。' })).toBeVisible()
+    await expect(page.getByText('交互示意', { exact: true })).toBeVisible()
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await page.screenshot({ path: `../artifacts/home-${width}.png`, fullPage: true })
     await page.getByRole('link', { name: '开始我的备考' }).click()

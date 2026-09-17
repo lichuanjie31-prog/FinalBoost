@@ -14,13 +14,13 @@ export function Footer() {
     <div className="footer-inner page-width">
       <div className="footer-cta">
         <span className="eyebrow">YOUR NEXT STEP, CLEARER</span>
-        <h2>下一次考试，<br />从这里开始</h2>
-        <p>从一份试卷出发，找到复习的方向。</p>
+        <h2>从正在备考的那门课，<br />开始了解自己的学习。</h2>
+        <p>记下考试目标，带上你的第一份作答。</p>
         <Link className="button" to="/register">开始使用 FinalBoost<ArrowUpRight size={17} /></Link>
       </div>
       <div className="footer-bottom">
         <Brand />
-        <span className="footer-copy">把每一步复习，变得更有方向</span>
+        <span className="footer-copy">把时间留给理解与内化</span>
         <small>FinalBoost · 期末备考助手</small>
       </div>
     </div>
