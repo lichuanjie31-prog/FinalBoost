@@ -9,6 +9,7 @@ from .db import Database
 from .auth import router as auth_router, current_user
 from .common import new_id
 from .business import router as business_router
+from .modules.question_banks.router import router as question_banks_router
 from .grading import GradingWorker
 from .schemas import ErrorEnvelope
 
@@ -46,6 +47,7 @@ def create_app(**kwargs):
         return {"code":0,"message":"success","data":{"status":"ok","gradingMode":mode},"requestId":new_id()}
     app.include_router(auth_router)
     app.include_router(business_router)
+    app.include_router(question_banks_router)
     return app
 
 app = create_app()
