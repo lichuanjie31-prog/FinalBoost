@@ -5,6 +5,7 @@ import { AuthPage } from '../features/auth/AuthPage'
 import type { ReactNode } from 'react'
 import { Workspace, WorkspaceLayout } from '../features/exams/Workspace'
 import { ExamDetail } from '../features/exams/ExamDetail'
+import { AgentChat } from '../features/ai/AgentChat'
 
 export function Protected({ children }: { children: ReactNode }) {
   const auth = useAuth(), location = useLocation()
@@ -13,5 +14,5 @@ export function Protected({ children }: { children: ReactNode }) {
   return children
 }
 export function App() {
-  return <AuthProvider><a className="skip-link" href="#main">跳到主要内容</a><Routes><Route path="/" element={<Home />} /><Route path="/login" element={<AuthPage key="login" />} /><Route path="/register" element={<AuthPage key="register" register />} /><Route path="/app" element={<Protected><WorkspaceLayout><Workspace /></WorkspaceLayout></Protected>} /><Route path="/app/exams/:id" element={<Protected><WorkspaceLayout><ExamDetail /></WorkspaceLayout></Protected>} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></AuthProvider>
+  return <AuthProvider><a className="skip-link" href="#main">跳到主要内容</a><Routes><Route path="/" element={<Home />} /><Route path="/login" element={<AuthPage key="login" />} /><Route path="/register" element={<AuthPage key="register" register />} /><Route path="/app" element={<Protected><WorkspaceLayout><Workspace /></WorkspaceLayout></Protected>} /><Route path="/app/exams/:id" element={<Protected><WorkspaceLayout><ExamDetail /></WorkspaceLayout></Protected>} /><Route path="/app/ai" element={<Protected><WorkspaceLayout><AgentChat /></WorkspaceLayout></Protected>} /><Route path="*" element={<Navigate to="/" replace />} /></Routes></AuthProvider>
 }

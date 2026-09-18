@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +14,9 @@ from .common import new_id
 from .business import router as business_router
 from .grading import GradingWorker
 from .schemas import ErrorEnvelope
+from .marking.router import router as marking_router
+from .marking.provider import TencentMarkingProvider
+from .agent.router import router as agent_router
 
 def create_app(**kwargs):
     settings = Settings(**kwargs)
@@ -28,7 +34,8 @@ def create_app(**kwargs):
         finally: worker.close()
     app = FastAPI(title="FinalBoost", version="1.0.0", lifespan=lifespan, responses={code:{"model":ErrorEnvelope} for code in (400,401,403,404,409,413,415,422,429,500)})
     app.state.settings, app.state.db = settings, db
-    app.add_middleware(CORSMiddleware, allow_origins=list(settings.origins), allow_credentials=True, allow_methods=["GET","POST"], allow_headers=["Authorization","Content-Type","Idempotency-Key","X-Requested-With"])
+    app.state.marking_provider = TencentMarkingProvider()
+    app.add_middleware(CORSMiddleware, allow_origins=list(settings.origins), allow_credentials=True, allow_methods=["GET","POST","DELETE"], allow_headers=["Authorization","Content-Type","Idempotency-Key","X-Requested-With"])
     def error_response(status, message):
         return JSONResponse(status_code=status, content={"code":status*100+1,"message":message,"data":None,"requestId":new_id()}, headers={"Cache-Control":"no-store"})
     @app.exception_handler(StarletteHTTPException)
@@ -46,6 +53,8 @@ def create_app(**kwargs):
         return {"code":0,"message":"success","data":{"status":"ok","gradingMode":mode},"requestId":new_id()}
     app.include_router(auth_router)
     app.include_router(business_router)
+    app.include_router(marking_router)
+    app.include_router(agent_router)
     return app
 
 app = create_app()
