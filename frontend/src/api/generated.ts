@@ -742,8 +742,8 @@ export interface components {
             /** Requestid */
             requestId: string;
         };
-        /** Envelope[Page[PrivatePaperOut]] */
-        Envelope_Page_PrivatePaperOut__: {
+        /** Envelope[Page[PrivatePaperSummaryOut]] */
+        Envelope_Page_PrivatePaperSummaryOut__: {
             /**
              * Code
              * @default 0
@@ -754,7 +754,7 @@ export interface components {
              * @default success
              */
             message: string;
-            data: components["schemas"]["Page_PrivatePaperOut_"];
+            data: components["schemas"]["Page_PrivatePaperSummaryOut_"];
             /** Requestid */
             requestId: string;
         };
@@ -1011,10 +1011,10 @@ export interface components {
             /** Nextcursor */
             nextCursor?: string | null;
         };
-        /** Page[PrivatePaperOut] */
-        Page_PrivatePaperOut_: {
+        /** Page[PrivatePaperSummaryOut] */
+        Page_PrivatePaperSummaryOut_: {
             /** Items */
-            items: components["schemas"]["PrivatePaperOut"][];
+            items: components["schemas"]["PrivatePaperSummaryOut"][];
             /** Nextcursor */
             nextCursor?: string | null;
         };
@@ -1116,7 +1116,43 @@ export interface components {
             /** Publishedat */
             publishedAt: string | null;
             /** Downloadurl */
-            downloadUrl?: string | null;
+            downloadUrl: string;
+        };
+        /** PrivatePaperSummaryOut */
+        PrivatePaperSummaryOut: {
+            /** Paperid */
+            paperId: string;
+            subject: components["schemas"]["PaperSubject"];
+            /** Name */
+            name: string;
+            /** College */
+            college: string;
+            /** Year */
+            year: number;
+            /** Semester */
+            semester: string;
+            /**
+             * Visibility
+             * @enum {string}
+             */
+            visibility: "private" | "public";
+            /** Publicationstatus */
+            publicationStatus: ("draft" | "published" | "unpublished") | null;
+            /** Fileid */
+            fileId: string;
+            /** Filename */
+            fileName: string;
+            /** Filesize */
+            fileSize: number;
+            /** Sourcepublicpaperid */
+            sourcePublicPaperId: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Publishedat */
+            publishedAt: string | null;
         };
         /** PublicPaperOut */
         PublicPaperOut: {
@@ -3237,15 +3273,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
         };
     };
     create_system_subject_api_v1_subjects_system_post: {
@@ -3355,15 +3382,6 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3487,15 +3505,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
         };
     };
     list_private_papers_api_v1_papers_private_get: {
@@ -3520,7 +3529,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Envelope_Page_PrivatePaperOut__"];
+                    "application/json": components["schemas"]["Envelope_Page_PrivatePaperSummaryOut__"];
                 };
             };
             /** @description Bad Request */
@@ -3830,15 +3839,6 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4188,15 +4188,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
         };
     };
     publish_paper_api_v1_admin_papers__paper_id__publish_post: {
@@ -4315,15 +4306,6 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorEnvelope"];
                 };
             };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
         };
     };
     unpublish_paper_api_v1_admin_papers__paper_id__unpublish_post: {
@@ -4435,15 +4417,6 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -4680,15 +4653,6 @@ export interface operations {
             };
             /** @description Internal Server Error */
             500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
                 headers: {
                     [name: string]: unknown;
                 };

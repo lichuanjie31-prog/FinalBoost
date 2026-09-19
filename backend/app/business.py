@@ -76,7 +76,7 @@ def upload_image(request:Request,file:UploadFile,user=Depends(current_user)):
                 rid=new_id()
                 written=request.app.state.db.data_dir / "uploads" / rid
                 written.write_bytes(content)
-                db.execute("INSERT INTO files VALUES (?,?,?,?,?,?,?)",(rid,user["id"],rid,name,mime,len(content),time.time()))
+                db.execute("INSERT INTO files(id,user_id,storage_key,original_name,mime_type,size,created_at,sha256,purpose) VALUES (?,?,?,?,?,?,?,?,?)",(rid,user["id"],rid,name,mime,len(content),time.time(),hashlib.sha256(content).hexdigest(),"answer_image"))
                 return {"fileId":rid,"fileName":name,"mimeType":mime,"size":len(content),"url":f"/api/v1/files/{rid}"}
             result=execute(db,user["id"],request,payload,201,create)
         return result

@@ -30,10 +30,13 @@ def create_app(**kwargs):
     app = FastAPI(title="FinalBoost", version="1.0.0", lifespan=lifespan, responses={code:{"model":ErrorEnvelope} for code in (400,401,403,404,409,413,415,422,429,500)})
     app.state.settings, app.state.db = settings, db
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.origins), allow_credentials=True, allow_methods=["GET","POST"], allow_headers=["Authorization","Content-Type","Idempotency-Key","X-Requested-With"])
-    def error_response(status, message):
-        return JSONResponse(status_code=status, content={"code":status*100+1,"message":message,"data":None,"requestId":new_id()}, headers={"Cache-Control":"no-store"})
+    def error_response(status, message, code=None):
+        return JSONResponse(status_code=status, content={"code":code or status*100+1,"message":message,"data":None,"requestId":new_id()}, headers={"Cache-Control":"no-store"})
     @app.exception_handler(StarletteHTTPException)
-    async def http_error(request: Request, exc: HTTPException): return error_response(exc.status_code,str(exc.detail))
+    async def http_error(request: Request, exc: HTTPException):
+        if isinstance(exc.detail, dict):
+            return error_response(exc.status_code, exc.detail["message"], exc.detail.get("code"))
+        return error_response(exc.status_code, str(exc.detail))
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
         fields = ", ".join(str(e["loc"][-1]) for e in exc.errors())

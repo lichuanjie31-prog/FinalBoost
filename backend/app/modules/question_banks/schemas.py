@@ -52,8 +52,12 @@ class PaperOut(BaseModel):
     publishedAt: datetime | None
 
 
-class PrivatePaperOut(PaperOut):
-    downloadUrl: str | None = None
+class PrivatePaperSummaryOut(PaperOut):
+    pass
+
+
+class PrivatePaperOut(PrivatePaperSummaryOut):
+    downloadUrl: str
 
 
 class PublicPaperOut(BaseModel):

@@ -10,6 +10,9 @@ from .common import envelope, fail, new_id
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 bearer_scheme = HTTPBearer(auto_error=False)
+def role_for(username, settings):
+    return "admin" if username.strip().lower() in settings.admin_usernames else "student"
+
 def digest(value): return hashlib.sha256(value.encode()).hexdigest()
 def hash_password(password, salt=None):
     salt = salt or secrets.token_hex(16)
@@ -26,7 +29,13 @@ def current_user(request: Request, credentials: HTTPAuthorizationCredentials | N
     with request.app.state.db.transaction() as db:
         row = db.execute("SELECT u.id,u.username,s.id AS session_id FROM access_tokens a JOIN sessions s ON s.id=a.session_id JOIN users u ON u.id=s.user_id WHERE a.digest=? AND a.expires_at>? AND s.expires_at>? AND s.revoked=0", (digest(credentials.credentials),time.time(),time.time())).fetchone()
     if row is None: fail(401, "登录已过期，请重新登录")
-    return dict(row)
+    user = dict(row)
+    user["role"] = role_for(user["username"], request.app.state.settings)
+    return user
+
+def require_admin(user=Depends(current_user)):
+    if user["role"] != "admin": fail(403, "需要管理员权限")
+    return user
 
 def issue(db, user, settings, response, session_id=None):
     sid = session_id or new_id()
@@ -37,7 +46,7 @@ def issue(db, user, settings, response, session_id=None):
     expires = db.execute("SELECT expires_at FROM sessions WHERE id=?",(sid,)).fetchone()[0]
     response.set_cookie("fb_refresh", refresh, httponly=True, secure=settings.secure_cookie, samesite="strict", path="/api/v1/auth", max_age=max(1,int(expires-time.time())))
     response.headers["Cache-Control"] = "no-store"
-    return envelope({"accessToken":access,"expiresIn":settings.access_seconds,"user":{"userId":user["id"],"username":user["username"]}})
+    return envelope({"accessToken":access,"expiresIn":settings.access_seconds,"user":{"userId":user["id"],"username":user["username"],"role":role_for(user["username"], settings)}})
 
 @router.post("/register", response_model=Envelope[AuthOut], status_code=201, dependencies=[Depends(origin_guard)])
 def register(body: Credentials, request: Request, response: Response):
@@ -85,4 +94,4 @@ def logout(request: Request, response: Response):
     return envelope(None)
 
 @router.get("/me", response_model=Envelope[UserOut])
-def me(user=Depends(current_user)): return envelope({"userId":user["id"],"username":user["username"]})
+def me(user=Depends(current_user)): return envelope({"userId":user["id"],"username":user["username"],"role":user["role"]})
