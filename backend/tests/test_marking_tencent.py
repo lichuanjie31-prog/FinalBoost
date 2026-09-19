@@ -17,7 +17,8 @@ from test_business import setup_exam, upload
 from app.config import Settings
 from app.marking.fixture import FixtureMarkingProvider
 from app.marking.models import normalize_result
-from app.marking.provider import QUESTION_CONFIG, TencentMarkingProvider, build_submit_params, prepare_image
+from app.marking.provider import (QUESTION_CONFIG, TencentMarkingProvider, build_submit_params,
+                                  prepare_image, provider_message)
 
 DONE_RAW = {
     'JobStatus': 'DONE', 'Angle': -1.5, 'ErrorCode': '', 'ErrorMessage': '',
@@ -102,6 +103,17 @@ def test_provider_binds_verified_field_names_onto_the_real_sdk_request():
     with warnings.catch_warnings():
         warnings.simplefilter('ignore', DeprecationWarning)
         assert request.BoolSingleQuestion is None and request.EnableDeepThink is None
+
+
+def test_actionable_vendor_codes_get_a_specific_message():
+    # Observed in a real call on 2026-09-19: an account with valid credentials but
+    # without the service activated returns FailedOperation.UnOpenError. The generic
+    # text is not actionable, so this code maps to explicit console instructions.
+    assert '开通' in provider_message('FailedOperation.UnOpenError')
+    assert 'SecretKey' in provider_message('AuthFailure.SignatureFailure')
+    # Unknown codes keep the generic wording: vendor text is never echoed through.
+    assert provider_message('SomeUnknownVendorCode') == '腾讯云请求未完成，请根据错误码和 RequestId 排查'
+    assert provider_message('X', 'fallback') == 'fallback'
 
 
 def test_prepare_image_rejects_pdf_and_unbounded_payload():
@@ -351,7 +363,9 @@ def test_missing_credentials_are_reported_and_never_scored(tmp_path, monkeypatch
 
 
 def test_disabled_mode_reports_disabled_and_rejects_submission(tmp_path):
-    with client_for(tmp_path) as c:
+    # Explicit, so a developer's .env (which may set MARKING_MODE=tencent) cannot
+    # change what this test asserts.
+    with client_for(tmp_path, marking_mode='disabled') as c:
         auth, exam, file = setup_exam(c)
         state = c.get('/api/v1/marking/readiness', headers=auth).json()['data']
         assert state['ready'] is False and state['mode'] == 'disabled'

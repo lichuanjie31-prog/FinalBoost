@@ -33,6 +33,22 @@ QUESTION_CONFIG = {
 }
 
 ALLOWED_IMAGE_FORMATS = {"PNG", "JPEG", "WEBP"}
+
+# Vendor codes that deserve a specific, actionable message. Only codes listed here
+# are ever surfaced verbatim-adjacent; anything else falls back to the generic
+# text, so a vendor message that echoes our input can never reach the user.
+ACTIONABLE_CODES = {
+    "FailedOperation.UnOpenError": "腾讯云试题批改服务尚未开通，请前往腾讯云控制台开通「文字识别 · 试题批改」后重试",
+    "AuthFailure.SecretIdNotFound": "腾讯云 SecretId 无效，请检查后端凭据配置",
+    "AuthFailure.SignatureFailure": "腾讯云签名校验失败，请检查后端 SecretKey 是否正确",
+    "AuthFailure.TokenFailure": "腾讯云临时 Token 无效或已过期，请重新获取",
+    "FailedOperation.InsufficientBalance": "腾讯云账户余额不足，请充值后重试",
+    "RequestLimitExceeded": "腾讯云请求过于频繁，请稍后重试",
+}
+
+
+def provider_message(code, fallback="腾讯云请求未完成，请根据错误码和 RequestId 排查"):
+    return ACTIONABLE_CODES.get(code, fallback)
 MAX_BASE64_BYTES = 10_000_000
 MAX_ASSIST_IMAGES = 2
 
@@ -135,7 +151,7 @@ class TencentMarkingProvider:
             code = exc.get_code() or "ProviderError"
             # Preserve machine code/request ID, not vendor messages which may echo inputs.
             raise ProviderError(
-                code, "腾讯云请求未完成，请根据错误码和 RequestId 排查", exc.get_request_id(),
+                code, provider_message(code), exc.get_request_id(),
                 uncertain=code.startswith(("ClientNetworkError", "InternalError")) or "Timeout" in code,
             ) from None
 

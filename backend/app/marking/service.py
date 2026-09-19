@@ -5,7 +5,7 @@ import time
 from ..business import owned
 from ..common import fail, new_id
 from .models import normalize_result
-from .provider import ProviderError, prepare_image
+from .provider import ProviderError, prepare_image, provider_message
 
 # A submission that never reported back is only declared unknown once this much
 # time has passed without an answer from the vendor.
@@ -158,8 +158,9 @@ class ExamMarkingTool:
                 error = {'code': 'InvalidProviderResult', 'message': '批改结果不完整，未生成分数，请人工核对'}
         elif status == 'FAIL':
             local = 'failed'
-            error = {'code': str(raw.get('ErrorCode') or 'ProviderFailed'),
-                     'message': str(raw.get('ErrorMessage') or '腾讯云批改失败，请按错误码和 RequestId 排查')}
+            code = str(raw.get('ErrorCode') or 'ProviderFailed')
+            error = {'code': code,
+                     'message': provider_message(code, str(raw.get('ErrorMessage') or '腾讯云批改失败，请按错误码和 RequestId 排查'))}
         elif status in ('WAIT', 'RUN'):
             local = {'WAIT': 'queued', 'RUN': 'running'}[status]
         else:

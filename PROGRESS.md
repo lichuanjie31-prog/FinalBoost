@@ -74,3 +74,28 @@
 - 一并提交了本分支既有的 LangChain / MySQL 改动（`backend/app/agent/**`、`database.py`、
   `requirements.txt`、`debug_llm.py`、`init_mysql.py`、根目录 `test_agent.py`、
   `docs/study-workspace.md` 等）。本轮对这些文件只读未改，仅随分支一并交付。
+
+## 2026-09-19 配置真实凭据与真实调用验收
+
+- 凭据写入 `backend/.env`（gitignore 已覆盖，未进入任何提交，已核对无泄漏）。
+- **真实请求已发出并到达腾讯云**，返回 `FailedOperation.UnOpenError`：
+  原始 message「服务未开通，请前往控制台开通相应服务」，RequestId `e5e84f99-8a6f-4c99-9a8a-11276238d03d`。
+
+### 由此新验收通过（真实往返）
+- 凭据有效、签名通过：返回业务错误码而非 `AuthFailure.*`。
+- 网络可达 `ocr.tencentcloudapi.com`，请求均带回 `RequestId`。
+- 非计费查询接口可用：`DescribeQuestionMarkAgentJob` 返回参数校验错误（`JobId` 无效）而非鉴权错误——
+  该调用不计费，用于验证凭据而不产生费用。
+- **真实供应商错误被正确处理**：端到端提交后状态 `failed`、`result` 为 `null`、
+  不自动重试、`RequestId` 保留。这是本轮最有价值的真实验证。
+- 据此改进：已验证的 `FailedOperation.UnOpenError` 等错误码映射为可操作提示（新增测试锁定）。
+
+### 受阻项（需人工在腾讯云控制台操作）
+- 需开通「文字识别 OCR · 试题批改」，开通前无法取得真实 `DONE` 结果。
+- 因此**实际正误质量、实际计费、参考答案召回、坐标叠加均仍未验收**，已如实写入 BLOCKED.md。
+- 副作用修正：`main.py` 的 `load_dotenv()` 会让测试读到 `.env` 的 `MARKING_MODE`，
+  已把相关测试改为显式传参，避免测试结果随开发机环境漂移。
+
+### 本轮回归（真实凭据配置后复跑）
+- 后端 47/47 通过（新增 1 项错误码映射测试）。合约 26 路径一致。前端构建与类型同步通过。
+- 浏览器批改 2/2 通过。
