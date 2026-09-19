@@ -260,3 +260,53 @@ feature/myself-ai 的批改与 AI 修复之上，每条分支合入后跑最小�
 - 干净虚拟环境 `python -m venv` + `pip install -r requirements.lock` 后：应用可构建（55 路径），
   `pytest -q` 全部通过（该次运行 120 项；此后又补了 1 项错题集/判卷历史用例）。
 - 前端 `tsc --noEmit` + `vite build` 通过；`verify_contracts.py` 55 路径一致；`check:generated` 通过。
+
+## 2026-09-19 交付验收（integrate/delivery）
+
+### 结果（提交 b75eb0b）
+
+| 检查 | 命令 | 结果 |
+|------|------|------|
+| 后端测试 | `cd backend && python -m pytest -q` | **121 passed** |
+| 接口契约 | `python scripts/verify_contracts.py` | 三份源文档 SHA256 一致 + OpenAPI **55 路径**一致 |
+| 前端构建与类型 | `cd frontend && npm run build` | `tsc --noEmit` + `vite build` 通过 |
+| 生成类型 | `cd frontend && npm run check:generated` | 与 OpenAPI 一致 |
+| 浏览器主回归 | `npm run test:e2e` | **12 passed** |
+| 浏览器失败场景 | `npm run test:failure` | **1 passed** |
+| 浏览器批改（fixture 边界） | `npm run test:marking` | **4 passed** |
+| 浏览器腾讯云（fixture 边界） | `npm run test:marking-tencent` | **1 passed** |
+| 浏览器未配置（腾讯云 / 千问） | `npm run test:marking-unconfigured[-qwen]` | **1 + 1 passed** |
+
+### 干净启动（临时数据目录，真实库不动）
+- `DATA_DIR=<临时目录>` 启动 uvicorn：`/health` 正常（gradingMode=mock / chatMode=mock /
+  markingMode=disabled）；空库自动迁移 11 个迁移文件，users/exams/grading_jobs/marking_jobs/
+  mock_exams/trainings/papers/agent_messages 全部建出；注册与创建考试成功。
+- 真实数据库 `backend/data/finalboost.sqlite3` 前后 sha256/mtime/size 完全一致，未被删除或改动。
+
+### 浏览器端到端流程
+注册登录 → 创建考试 → 题库（私人 / 公共 / 管理）→ 上传答卷 → 逐页批改 → 助手追问错题 →
+专项训练五阶段 → 最终模拟作答提交与结果查看：全部通过。
+
+### 评分验证（不只接口成功）
+- fixture 数据集含已知错题：逐题判定断言为 错误 / 正确 / 错误，并核对作答、参考答案、解析、
+  知识点与错误原因。
+- 最终模拟（浏览器实测，按标准答案评分）：四题全选 A → `0 / 100 分` 且列出 4 道错题
+  （含「你的作答」与正确答案）；再开一套全对 → `100 / 100 分`；刷新后结果保留。
+  后端另有 8 项测试覆盖全对=满分、全错=0、三套不同作答得到三个不同分数、状态推进等。
+- 边界说明：fixture 只替换供应商边界、返回固定数据集，**不能**用它证明图片批改的评分随
+  作答内容变化；该性质需真实模型才能验收（见下）。
+
+### 多页提交（阻断项，已修）
+`MarkingStudy` 原先「全部页成功才 setJobs」：第二页失败会让已受理的第一页既不可见也不轮询。
+现在每受理一页立即并入结果列表并进入轮询；已受理的页在重试时跳过（页码与 requestKey 不变）。
+浏览器用例注入第二页失败后验证：第一页立即显示并轮询到「批改完成」，重试只提交第二页、
+第一页提交请求数保持为 1。回退到旧实现该用例失败（结果计数为 0），证明用例确实钉住缺陷。
+
+### 真实模型验收：**未通过**（如实记录，不声称已通过）
+| Provider | readiness | 提交 | 终态 | 错误 | 是否回退分数 |
+|----------|-----------|------|------|------|--------------|
+| qwen（qwen-vl-plus） | ready=true, mode=live | 202 受理 | failed | `qwen:Unauthorized`（Key 无效或过期） | 否，result 为空 |
+| tencent（ap-guangzhou） | ready=true, mode=live | 202 受理 | failed | `InvalidProviderResult`（20×20 空白测试图无可识别题目） | 否，result 为空 |
+
+两例都验证了「真实模型失败不回退固定分数」。qwen 需更新 `DASHSCOPE_API_KEY`；腾讯云需一张
+真实答卷照片（会产生一次真实外部调用），本次未擅自把用户真实试卷发往云端。
