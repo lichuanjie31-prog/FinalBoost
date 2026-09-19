@@ -4,8 +4,9 @@
 > 腾讯云试题批改保留，可用 `MARKING_PROVIDER=tencent` 切换。
 > 配置、Schema 与未验收项见 [千问批改接入说明](docs/qwen-marking.md)
 > 与 [腾讯云批改接入说明](docs/tencent-marking.md)；工作台功能边界见 [备考工作台说明](docs/study-workspace.md)。
-> **两个 Provider 的真实调用均尚未完整验收**（千问无 API Key；腾讯云服务未开通），
-> 文中凡标注「模拟」「离线」「fixture」处均非真实结果。
+> **真实调用验收状态**：千问视觉批改与真实对话已于 2026-09-19 用真实凭据验收通过
+> （真实手写答卷识别 7 题、逐题判定与解析；真实模型工具调用闭环）；
+> 腾讯云真实调用尚未验收（服务未开通）。文中凡标注「模拟」「离线」「fixture」处均非真实结果。
 
 期末备考助手。从一份试卷出发，看清薄弱知识点，整理目标，逐步复习。
 
@@ -14,7 +15,7 @@
 - **前端**: React 19 + TypeScript 5.9 + Vite 8 + React Router 7 + Playwright 1.63
 - **后端**: Python 3.13 + FastAPI + SQLite + Pydantic 2 + Pillow
 - **鉴权**: 用户名密码（scrypt 哈希）+ 短期访问令牌 + HttpOnly 刷新 Cookie
-- **当前批改**: 多 Provider — 千问视觉 `qwen3-vl-plus`（默认）/ 腾讯云试题批改 Agent，
+- **当前批改**: 多 Provider — 千问视觉（模型取 `QWEN_MARKING_MODEL`，本机实测 `qwen-vl-plus`，默认）/ 腾讯云试题批改 Agent，
   经 `MARKING_PROVIDER` 切换；离线验收用 `MARKING_MODE=fixture`（只替换外部边界）。
   另有本机演示模式（`GRADING_MODE=mock`）返回固定示例分数，界面明确标注为模拟数据
 
@@ -119,7 +120,7 @@ npm run dev
 全部已验证可执行（2026-09-19）：
 
 ```bash
-# 后端测试（120/120 通过）
+# 后端测试（121/121 通过）
 cd backend && .venv/Scripts/python.exe -m pytest -q
 
 # 前端构建与类型检查
@@ -156,7 +157,7 @@ cd frontend && npm run check:generated
 | 专项训练 | `/trainings/*` | `/app/trainings`、`/app/trainings/:id` | 已接入 |
 | 最终模拟 | `/exams/{id}/mock*`、`/mock/mistakes` | `/app/mock`、`/app/exams/:id/mock` | 已接入 |
 
-后端 120 项、合约 55 路径、干净虚拟环境重装后全部通过；浏览器用例见上方命令。
+后端 121 项、合约 55 路径、干净虚拟环境重装后全部通过；浏览器用例见上方命令。
 最终模拟的判卷依据学生真实作答按标准答案评分（选择题精确匹配、简答题包含匹配 80%），
 不提供评分依据时不给分数，也绝不回退到固定示例分数。
 
@@ -169,8 +170,8 @@ cd frontend && npm run check:generated
 | 新增 28 项千问测试（请求边界、Schema、正确/错误/空 JSON、超时、网络失败、幂等、隔离、重启、双 Provider、无回退、密钥不外泄） | 全部通过 |
 | 浏览器 14 项（既有 9 + 千问 2 + 腾讯云 1 + 未配置 2） | 全部通过 |
 | 前端构建与类型检查 | 通过 |
-| 合约校验 | 26 路径匹配 |
-| 真实千问调用 | **未验收**（无 API Key） |
+| 合约校验 | 通过（集成后为 55 路径，见上方「验收命令」） |
+| 真实千问调用 | **已验收**（2026-09-19 更新凭据后：识别 7 题、逐题判定与解析） |
 | 真实腾讯云调用 | **未验收**（服务未开通，见 tencent-marking.md） |
 
 ## 验收结果摘要（2026-09-16）
@@ -281,13 +282,18 @@ $env:MARKING_MODE = "fixture"; $env:MARKING_PROVIDER = "qwen"
 
 ## 局限与待办
 
-- **真实千问调用未验收**: 2026-09-19 交付验收用真实凭据发起调用，DashScope 返回
-  `qwen:Unauthorized`「API Key 无效或已过期」。需更新 `DASHSCOPE_API_KEY` 后重验；
-  实际批改质量与 Token 计费均未核对。
-- **真实腾讯云调用未验收**: 凭据配置通过 readiness（mode=live、region=ap-guangzhou），但
-  用空白测试图提交后供应商未返回可用的逐题结果，被判为 `InvalidProviderResult`。
-  真实验收需要一张**真实答卷照片**（会产生一次真实外部调用），本次未擅自发送。
-  上一轮真实调用记录为 `FailedOperation.UnOpenError`「服务未开通，请前往控制台开通相应服务」。
+- **真实千问批改与对话已验收**（2026-09-19，更新 `DASHSCOPE_API_KEY` 后实测）：
+  一张真实手写答卷（1280×1706）经 `qwen-vl-plus` 批改，`succeeded`、耗时 23.1s、
+  token 3822，识别 **7 题**并逐题给出学生作答、判定、参考答案、知识点与解析；
+  其中 1 题学生未作答被正确保留为「未判定」而非错题，`totalScore=None`
+  （无评分依据不给分）。真实对话（`qwen-plus`，`chatMode=llm`）能引用本次批改的题号并
+  分步讲解，且会自行调用 `get_study_summary` / `query_weak_points` 等工具后作答。
+- **真实腾讯云调用未验收**: 凭据配置通过 readiness（mode=live、region=ap-guangzhou），
+  但用空白测试图提交得到 `InvalidProviderResult`；历史上曾返回
+  `FailedOperation.UnOpenError`「服务未开通」。真实验收需要服务开通 + 一张真实答卷照片，
+  本次未把用户真实试卷发往腾讯云。
+- **真实模型调用成本**: 每次批改的 token 用量会写入任务并显示在页面上（`usage_json`），
+  可用 provenance 追溯到具体模型与耗时。
 - **真实模型失败一律不回退分数**: 上述两条失败路径下 `result` 均为空，界面显示失败与错误码，
   绝不回退到固定示例分数（有 fixture 与未配置两组浏览器用例佐证）。
 - **坐标批注未实现**: `boundingBox` 恒为 `null`，界面只展示文字结果。
