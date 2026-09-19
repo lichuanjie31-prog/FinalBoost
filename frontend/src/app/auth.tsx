@@ -25,5 +25,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 }
 export const useAuth = () => useContext(AuthContext)
 export function safeNext(value: string | null) {
-  return value && /^\/app(?:\/exams\/[a-zA-Z0-9_-]+)?$/.test(value) ? value : '/app'
+  if (!value) return '/app'
+  const [path] = value.split('?',1)
+  const allowed = /^\/app(?:$|\/exams\/[a-zA-Z0-9_-]+$|\/question-bank(?:$|\/upload$|\/public$|\/papers\/[a-zA-Z0-9_-]+$)|\/admin\/question-bank(?:$|\/upload$))/.test(path)
+  return allowed && !value.startsWith('//') ? value : '/app'
 }

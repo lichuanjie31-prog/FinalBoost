@@ -1,0 +1,91 @@
+.qb-filters{display:grid;grid-template-columns:minmax(180px,1.4fr) repeat(4,minmax(120px,1fr)) auto;gap:14px;align-items:end;margin-bottom:22px;padding:18px}
+.qb-filters label,.qb-upload-form label,.qb-new-subject label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:11px;font-weight:500;color:var(--ink-soft)}
+.qb-filters input,.qb-filters select,.qb-upload-form input,.qb-upload-form select,.qb-new-subject input{width:100%;height:42px;border:1px solid var(--border);border-radius:9px;background:#fff;padding:9px 11px;color:var(--ink);font-size:13px;transition:border-color .2s,box-shadow .2s}
+.qb-filters input:focus,.qb-filters select:focus,.qb-upload-form input:focus,.qb-upload-form select:focus,.qb-new-subject input:focus{border-color:var(--ink);box-shadow:0 0 0 1px var(--ink)}
+.qb-search>div{position:relative}
+.qb-search svg{position:absolute;left:11px;top:13px;color:var(--ink-muted)}
+.qb-search input{padding-left:34px}
+.qb-filter-actions{height:42px;display:flex;align-items:center;gap:14px;white-space:nowrap}
+.qb-filter-actions .button{height:42px}
+.qb-page-error{margin-bottom:18px}
+.qb-page-error .text-button{margin-top:8px}
+
+.qb-paper-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.qb-paper-card{display:flex;flex-direction:column;min-width:0;border:1px solid var(--border);background:white;border-radius:var(--radius);padding:22px;transition:border-color .2s,box-shadow .2s}
+a.qb-paper-card:hover{border-color:#a1a1aa;box-shadow:0 8px 30px rgba(0,0,0,.06)}
+.qb-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:24px}
+.qb-source{font-size:10px;color:var(--ink-muted);white-space:nowrap}
+.qb-paper-card h2,.qb-admin-paper h2{font-size:20px;font-weight:600;margin:17px 0 12px;overflow-wrap:anywhere}
+.qb-paper-meta{display:flex;flex-wrap:wrap;gap:8px 18px;color:var(--ink-soft);font-size:11px}
+.qb-paper-meta span{display:flex;align-items:center;gap:6px;min-width:0}
+.qb-card-foot{display:flex;align-items:center;justify-content:space-between;min-height:39px;border-top:1px solid var(--border-light);padding-top:15px;margin-top:auto;transform:translateY(5px);font-size:10px;color:var(--ink-muted)}
+.qb-card-foot>span:last-child{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:500;color:var(--ink-soft)}
+.qb-card-foot .button{margin-left:auto}
+.qb-copied{margin-left:auto;color:var(--teal)}
+.qb-load-more{display:flex;justify-content:center;padding-top:26px}
+
+.qb-upload-form{display:flex;flex-direction:column;gap:22px;max-width:860px;padding:28px}
+.qb-upload-form .form-columns{gap:20px}
+.qb-subject-picker{display:flex;flex-direction:column;gap:12px;padding-bottom:22px;border-bottom:1px solid var(--border-light)}
+.qb-new-subject{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:end}
+.qb-new-subject .button{height:42px;white-space:nowrap}
+.qb-selected-file{display:flex;align-items:center;gap:12px;border:1px solid var(--border);border-radius:var(--radius);padding:16px;background:var(--surface-warm)}
+.qb-selected-file>svg:first-child{color:var(--teal)}
+.qb-selected-file>div{display:flex;flex:1;min-width:0;flex-direction:column}
+.qb-selected-file strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qb-selected-file span{font-size:11px;color:var(--ink-muted)}
+.qb-selected-file .qb-file-ok{color:var(--teal)}
+.qb-upload-actions{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-top:4px}
+.qb-upload-actions p{font-size:11px;line-height:1.7;color:var(--ink-muted)}
+.qb-upload-actions .button{white-space:nowrap}
+
+.qb-detail-panel{max-width:900px;padding:30px}
+.qb-detail-file{display:flex;align-items:center;gap:16px;padding:20px;border-radius:var(--radius);background:var(--surface-warm);border:1px solid var(--border-light)}
+.qb-detail-file>svg{color:var(--teal)}
+.qb-detail-file>div{display:flex;flex-direction:column;min-width:0}
+.qb-detail-file strong{font-size:15px;overflow-wrap:anywhere}
+.qb-detail-file span{font-size:11px;color:var(--ink-muted)}
+.qb-detail-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:24px}
+.qb-detail-list>div{display:grid;grid-template-columns:90px minmax(0,1fr);gap:12px;padding:15px 8px;border-bottom:1px solid var(--border-light);font-size:13px}
+.qb-detail-list dt{color:var(--ink-muted)}
+.qb-detail-list dd{color:var(--ink);overflow-wrap:anywhere}
+
+.qb-admin-list{display:flex;flex-direction:column;gap:14px}
+.qb-admin-paper{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:22px}
+.qb-admin-paper-main{min-width:0;flex:1}
+.qb-admin-paper h2{margin-block:12px 9px}
+.qb-admin-paper small{display:block;margin-top:12px;color:var(--ink-muted);font-size:10px}
+.qb-admin-actions{display:flex;align-items:center;gap:15px;flex-shrink:0}
+.qb-status{font-size:10px;font-weight:500;border-radius:6px;padding:4px 9px}
+.qb-status-draft{color:#92400e;background:#fffbeb}
+.qb-status-published{color:var(--teal);background:#ecfdf5}
+.qb-status-unpublished{color:var(--ink-soft);background:var(--border-light)}
+
+@media(max-width:1150px){
+  .qb-filters{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .qb-filter-actions{justify-content:flex-end}
+}
+@media(max-width:800px){
+  .qb-paper-grid{grid-template-columns:1fr}
+  .qb-admin-paper{align-items:flex-start;flex-direction:column}
+  .qb-admin-actions{width:100%;justify-content:flex-end;border-top:1px solid var(--border-light);padding-top:14px}
+}
+@media(max-width:700px){
+  .qb-filters{grid-template-columns:1fr 1fr;padding:15px;gap:12px}
+  .qb-search,.qb-filter-actions{grid-column:1/-1}
+  .qb-filter-actions{justify-content:space-between}
+  .qb-paper-card{padding:18px}
+  .qb-paper-card h2{font-size:18px}
+  .qb-card-head{align-items:flex-start}
+  .qb-card-foot{gap:10px}
+  .qb-upload-form{padding:19px;gap:18px}
+  .qb-upload-form .form-columns,.qb-new-subject{grid-template-columns:1fr}
+  .qb-new-subject .button{width:100%}
+  .qb-upload-actions{align-items:stretch;flex-direction:column}
+  .qb-upload-actions .button{width:100%}
+  .qb-detail-panel{padding:18px}
+  .qb-detail-list{grid-template-columns:1fr}
+  .qb-detail-list>div{grid-template-columns:80px minmax(0,1fr)}
+  .qb-admin-actions{align-items:stretch;flex-direction:column}
+  .qb-admin-actions>*{justify-content:center;width:100%}
+}

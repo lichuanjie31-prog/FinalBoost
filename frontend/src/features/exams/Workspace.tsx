@@ -1,18 +1,20 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { ArrowRight, BookOpen, CalendarDays, LogOut, Plus, ScanLine, Target, X } from 'lucide-react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { ArrowRight, BookOpen, CalendarDays, Database, Globe2, LogOut, Plus, ScanLine, ShieldCheck, Target, X } from 'lucide-react'
 import { useAuth } from '../../app/auth'
 import { Brand, ErrorMessage, EmptyState, MockNotice } from '../../components/Shared'
 import { study, type Exam } from '../../api/study'
 
-export function WorkspaceLayout({ children }: { children: ReactNode }) {
-  const { user, logout } = useAuth(), navigate = useNavigate()
+export function WorkspaceLayout() {
+  const { user, logout } = useAuth(), navigate = useNavigate(), location = useLocation()
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   async function signOut() {
     setBusy(true); setError('')
     try { await logout(); navigate('/login', { replace:true }) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
-  return <div className="workspace"><header className="workspace-header"><Brand /><div><span className="account-name">{user?.username}</span><button className="text-button" onClick={signOut} disabled={busy}><LogOut size={16} />退出登录</button></div></header><div className="workspace-body"><aside className="workspace-nav"><span className="tiny-label">学习空间</span><Link className="nav-selected" to="/app"><BookOpen size={18} />我的备考</Link><span><Target size={18} />专项训练<small>规划中</small></span><span><ScanLine size={18} />最终模拟<small>规划中</small></span><div className="nav-note">从一份试卷开始，<br />找到复习的下一步。</div><Link className="text-link" to="/">返回首页<ArrowRight size={14} /></Link></aside><main id="main" tabIndex={-1} className="workspace-main"><ErrorMessage error={error} />{children}</main></div></div>
+  const navClass = ({ isActive }: { isActive:boolean }) => isActive ? 'nav-selected' : undefined
+  const privateSelected = location.pathname === '/app/question-bank' || location.pathname === '/app/question-bank/upload' || location.pathname.startsWith('/app/question-bank/papers/')
+  return <div className="workspace"><header className="workspace-header"><Brand /><div><span className="account-name">{user?.username}{user?.role==='admin' ? ' · 管理员' : ''}</span><button className="text-button" onClick={signOut} disabled={busy}><LogOut size={16} />退出登录</button></div></header><div className="workspace-body"><aside className="workspace-nav"><span className="label-text">学习空间</span><NavLink end className={navClass} to="/app"><BookOpen size={18} />我的备考</NavLink><NavLink end className={privateSelected ? 'nav-selected' : undefined} to="/app/question-bank"><Database size={18} />私人题库</NavLink><NavLink className={navClass} to="/app/question-bank/public"><Globe2 size={18} />公共题库</NavLink>{user?.role==='admin' && <NavLink className={navClass} to="/app/admin/question-bank"><ShieldCheck size={18} />题库管理</NavLink>}<span className="nav-planned"><Target size={18} />专项训练<small>规划中</small></span><span className="nav-planned"><ScanLine size={18} />最终模拟<small>规划中</small></span><div className="nav-note">从一份试卷开始，<br />找到复习的下一步。</div><Link className="text-link nav-home" to="/">返回首页<ArrowRight size={14} /></Link></aside><main id="main" tabIndex={-1} className="workspace-main"><ErrorMessage error={error} /><Outlet /></main></div></div>
 }
 
 function shanghaiDate() {
