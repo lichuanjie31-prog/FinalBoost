@@ -27,7 +27,7 @@ FinalBoost/
 │   │   ├── api/       # 请求层、类型生成、study 业务封装
 │   │   ├── app/       # 路由、鉴权上下文
 │   │   ├── components/# 共享 UI 组件
-│   │   ├── features/  # landing/auth/exams 功能模块
+│   │   ├── features/  # landing/auth/exams/training 功能模块
 │   │   └── styles/    # CSS 变量与样式
 │   ├── tests/         # Playwright 浏览器测试
 │   └── dist/          # 构建产物
@@ -35,6 +35,9 @@ FinalBoost/
 │   ├── app/
 │   │   ├── auth.py    # 账号接口与令牌管理
 │   │   ├── business.py# 考试、文件、判卷、诊断接口
+│   │   ├── training.py# 专项训练、作答、检测、PDF 导出接口
+│   │   ├── training_worker.py # 专项训练后台判分与导出执行器
+│   │   ├── pdf.py     # 训练卷 PDF 渲染（Pillow）
 │   │   ├── grading.py # 模拟判卷后台执行器
 │   │   ├── marking/   # 批改：base(Provider 契约)/qwen/provider(腾讯云)/fixture/service/router/models
 │   │   ├── db.py      # SQLite 事务与迁移
@@ -131,7 +134,20 @@ cd frontend && npm run test:marking-tencent            # 腾讯云 1 项：切�
 cd frontend && npm run test:marking-unconfigured       # 腾讯云未配置 1 项
 cd frontend && npm run test:marking-unconfigured-qwen  # 千问未配置 1 项
 
-# 合约验证（SHA256 指纹 + OpenAPI 一致性，26 路径）
+# 浏览器测试 - 完整业务流程（3/3 通过）
+cd frontend && npx playwright test tests/workflow.spec.ts
+
+# 浏览器测试 - 失败场景（1/1 通过）
+cd frontend && npx playwright test tests/failure.spec.ts --config playwright.failure.config.ts
+
+# 专项训练 - 后端测试（8/8 通过）
+cd backend && .venv/Scripts/python.exe -m pytest tests/test_training.py -v
+
+# 专项训练 - 浏览器全流程（1/1 通过）
+cd frontend && npx playwright test tests/training.spec.ts
+
+# 合约验证（SHA256 指纹 + OpenAPI 一致性）
+
 backend/.venv/Scripts/python.exe scripts/verify_contracts.py
 
 # 生成类型验证
@@ -180,6 +196,32 @@ cd frontend && npm run check:generated
 - 访问令牌过期后刷新成功
 - 模拟场景：不分析图片内容，返回固定示例评分
 - 服务连接故意中断后，健康检查失败（exit=1）；恢复后检查通过（exit=0）
+
+## 专项训练模块（2026-09-17）
+
+围绕「薄弱知识点 → 五阶段专项突破 → 掌握度检测 → 掌握度更新 → PDF 导出」的闭环。
+
+**阶段状态机**：`method`（题型速记）→ `guided`（AI 带做）→ `easy` → `medium` → `quiz`（掌握度检测），状态为 `locked`/`unlocked`/`completed`，按序解锁。
+
+**接口**（相对 `/api/v1`）：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/trainings` | 当前用户训练列表（cursor 分页） |
+| POST | `/trainings` | 创建训练，初始化五阶段 |
+| GET | `/trainings/{id}` | 训练详情与阶段状态 |
+| GET | `/trainings/{id}/stages/{type}` | 阶段内容，锁定时 409 |
+| POST | `/trainings/{id}/stages/{type}/complete` | 推进阶段，返回 nextStageType |
+| POST | `/trainings/{id}/attempts` | 提交作答（在线或拍照），202 入队 |
+| GET | `/trainings/{id}/attempts/{attemptId}` | 轮询作答结果与掌握度变化 |
+| POST | `/trainings/{id}/quiz` | 生成掌握度检测题 |
+| POST | `/trainings/{id}/quiz/answer` | 提交检测答案（每题一次） |
+| POST | `/trainings/{id}/pdf` | 生成训练卷 PDF，202 入队 |
+| GET | `/trainings/{id}/pdf/{exportId}` | 查询导出结果与下载地址 |
+
+**掌握度公式**（首版）：`0.60×questionAccuracy + 0.25×aiQuizScore + 0.15×stability`，缺失因子按剩余权重归一化，全部缺失返回 null。证据按 `evidenceId` 去重，同一作答只累计一次。
+
+**当前边界**：题目为内置种子题并标记 `ai_variant`，待真题库接入后替换；检测判分为确定性示例，LLM 接入点已预留；PDF 由 Pillow 渲染，中文字体自动回退。
 
 ## 环境变量
 
@@ -244,7 +286,8 @@ $env:MARKING_MODE = "fixture"; $env:MARKING_PROVIDER = "qwen"
 - **本机演示模式**: `MARKING_MODE=disabled` 时工作台展示固定示例分数（63/100 分，4 道示例题），
   不分析上传图片内容，界面明确标注「模拟数据，仅用于流程联调」。
   该路径与腾讯云批改互不回退：批改启用后失败只会显示失败，不会退回示例分数。
-- **专项训练**: 首页和工作台已标注"规划中"入口，未实现。
-- **最终模拟**: 同上。
+- **专项训练**: 已实现（建训练、五阶段、作答判分、掌握度检测与更新、PDF 导出）。
+  题目暂用内置种子题，待真题库接入。
+- **最终模拟**: 工作台已标注"规划中"入口，未实现。
 - **视觉验收**: 参考站 linkresume.cn 首轮访问超时，视觉方案采用简洁学习产品风格初稿，尚未对照参考站验收。
 - **生产部署**: `APP_ENV=production` 当前会拒绝启动，需在配置真实判卷适配器后解除。

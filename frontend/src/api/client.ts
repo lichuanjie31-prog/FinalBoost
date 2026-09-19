@@ -38,13 +38,22 @@ export function post<T>(path: string, body: unknown, key: string = crypto.random
   return request<T>(path, { method: 'POST', headers: { 'Idempotency-Key': key }, body: JSON.stringify(body) })
 }
 
-export async function download(path: string, fallbackName: string): Promise<void> {
+/**
+ * Download a file through the authenticated fetch (so it refreshes the session
+ * and surfaces the backend's business error code).
+ *
+ * With `fallbackName` the file is saved straight away, preferring the server's
+ * Content-Disposition name. Without it the blob is returned for the caller to
+ * handle — the training PDF export names the file itself.
+ */
+export async function download(path: string, fallbackName?: string): Promise<Blob> {
   const response = await authorizedFetch(path)
   if (!response.ok) {
     const payload = await response.json().catch(() => null)
     throw new ApiError(response.status, payload?.message || '文件下载失败，请稍后重试。', payload?.requestId, payload?.code)
   }
   const blob = await response.blob()
+  if (!fallbackName) return blob
   const disposition = response.headers.get('Content-Disposition') || ''
   const encoded = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
   const plain = disposition.match(/filename="?([^";]+)"?/i)?.[1]
@@ -55,4 +64,6 @@ export async function download(path: string, fallbackName: string): Promise<void
   anchor.href = url; anchor.download = fileName; anchor.style.display = 'none'
   document.body.appendChild(anchor); anchor.click(); anchor.remove()
   setTimeout(() => URL.revokeObjectURL(url), 0)
+  return blob
+
 }

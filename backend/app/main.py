@@ -13,7 +13,10 @@ from .auth import router as auth_router, current_user
 from .common import new_id
 from .business import router as business_router
 from .modules.question_banks.router import router as question_banks_router
+from .training import router as training_router
+
 from .grading import GradingWorker
+from .training_worker import TrainingWorker
 from .schemas import ErrorEnvelope
 from .marking.router import router as marking_router
 from .marking.provider import TencentMarkingProvider
@@ -72,10 +75,14 @@ def create_app(**kwargs):
             worker.configure_llm(settings)
         app.state.worker = worker
         worker.start()
+        training_worker = TrainingWorker(db)
+        app.state.training_worker = training_worker
+        training_worker.start()
         try:
             yield
         finally:
             worker.close()
+            training_worker.close()
             # Tests may replace the pool with None to run providers inline.
             executor = getattr(app.state, "marking_executor", None)
             if executor is not None:
@@ -165,7 +172,7 @@ def create_app(**kwargs):
     app.include_router(marking_router)
     app.include_router(agent_router)
     app.include_router(question_banks_router)
-
+    app.include_router(training_router)
     return app
 
 

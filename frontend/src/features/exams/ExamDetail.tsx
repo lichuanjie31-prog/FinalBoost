@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import { ArrowLeft, ArrowRight, Upload, FileImage, RefreshCw, CheckCircle2, X } from 'lucide-react'
+import { Link, useParams, useNavigate } from 'react-router-dom'
+import { ArrowLeft, ArrowRight, Upload, FileImage, RefreshCw, CheckCircle2, Target, X } from 'lucide-react'
 import { ErrorMessage } from '../../components/Shared'
 import { AIPanel } from '../../components/AIPanel'
-import { study, type Exam, type Grading, type Diagnosis } from '../../api/study'
+import { study, training as trainingApi, type Exam, type Grading, type Diagnosis } from '../../api/study'
 import { capabilities, type Capabilities, type MarkingMode } from '../../api/capabilities'
+
 import { QuestionScores } from './QuestionScores'
 import { MarkingStudy } from './MarkingStudy'
 
@@ -30,9 +31,11 @@ function Preview({ file }: { file: File }) {
   return url ? <img src={url} alt={file.name} /> : null
 }
 function ExamStudy({ id }: { id: string }) {
+  const navigate = useNavigate()
   const [exam, setExam] = useState<Exam | null>(null), [jobs, setJobs] = useState<Grading[]>([]), [diagnoses, setDiagnoses] = useState<Diagnosis[]>([])
   const [files, setFiles] = useState<LocalFile[]>([]), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true)
   const [error, setError] = useState(''), [uploadError, setUploadError] = useState(''), [diagnosisError, setDiagnosisError] = useState(''), [workingDiagnosis, setWorkingDiagnosis] = useState<string | null>(null)
+  const [startingTraining, setStartingTraining] = useState(''), [trainingError, setTrainingError] = useState('')
   const [service, setService] = useState<Capabilities | null>(null)
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -90,6 +93,11 @@ function ExamStudy({ id }: { id: string }) {
     try { const result = await study.diagnose(id,gid); setDiagnoses(old => [result,...old.filter(d => d.diagnosisId !== result.diagnosisId)]) }
     catch (e) { setDiagnosisError((e as Error).message) } finally { setWorkingDiagnosis(null) }
   }
+  async function startTraining(knowledgePointId: string) {
+    setStartingTraining(knowledgePointId); setTrainingError('')
+    try { const result = await trainingApi.create({ examId:id, knowledgePointId, targetMastery:80 }, crypto.randomUUID()); navigate(`/app/trainings/${result.trainingId}`) }
+    catch (e) { setTrainingError((e as Error).message) } finally { setStartingTraining('') }
+  }
   if (loading) return <div className="empty-state" role="status">正在读取考试记录…</div>
   if (!exam) return <div className="panel"><ErrorMessage error={error} /><button className="button button-quiet" onClick={() => setReload(v=>v+1)}>重新加载</button><Link to="/app" className="text-link">返回我的备考</Link></div>
   const active = jobs.find(j => j.gradingId === selectedId) || jobs[jobs.length - 1]
@@ -124,7 +132,7 @@ function ExamStudy({ id }: { id: string }) {
           </article>
         </>}<ErrorMessage error={diagnosisError} />
       </section>
-      {diagnoses.map(diagnosis => <section className="panel diagnosis-panel" key={diagnosis.diagnosisId}><div className="panel-title"><h2>{diagnosis.source === 'mock' ? '示例诊断报告' : '诊断报告'}</h2><span className="tag">{diagnosis.source === 'mock' ? '模拟数据' : 'AI 分析'}</span></div><div className="diagnosis-summary"><div><span className="muted">按考试满分换算的估分</span><div className="report-score"><strong data-testid="estimated-score">{diagnosis.estimatedScore}</strong><span> / {exam.maxScore}</span></div></div><div><strong>优先复习</strong><p>{diagnosis.weakPoints.map(p => p.name).join('、') || '暂无薄弱点记录'}</p></div></div><div className="outline-list">{diagnosis.outline.map(point => <div className="outline-item" key={point.knowledgePointId}><div><strong>{point.knowledgePoint}</strong><span>掌握度尚未评估</span></div><div className="outline-progress"><div className="progress-track"><span style={{width: point.scoreRate + '%'}} /></div><span>得分率 {point.scoreRate}%</span></div></div>)}</div></section>)}
+      {diagnoses.map(diagnosis => <section className="panel diagnosis-panel" key={diagnosis.diagnosisId}><div className="panel-title"><h2>{diagnosis.source === 'mock' ? '示例诊断报告' : '诊断报告'}</h2><span className="tag">{diagnosis.source === 'mock' ? '模拟数据' : 'AI 分析'}</span></div><div className="diagnosis-summary"><div><span className="muted">按考试满分换算的估分</span><div className="report-score"><strong data-testid="estimated-score">{diagnosis.estimatedScore}</strong><span> / {exam.maxScore}</span></div></div><div><strong>优先复习</strong>{diagnosis.weakPoints.length === 0 ? <p>暂无薄弱点记录</p> : <ul className="weak-point-list">{diagnosis.weakPoints.map(p => <li key={p.knowledgePointId}><span>{p.name}</span><button className="text-button" disabled={startingTraining !== ''} onClick={() => startTraining(p.knowledgePointId)}>{startingTraining === p.knowledgePointId ? '正在创建…' : '开始专项训练'}<Target size={14} /></button></li>)}</ul>}</div></div><div className="outline-list">{diagnosis.outline.map(point => <div className="outline-item" key={point.knowledgePointId}><div><strong>{point.knowledgePoint}</strong><span>掌握度尚未评估</span></div><div className="outline-progress"><div className="progress-track"><span style={{width: point.scoreRate + '%'}} /></div><span>得分率 {point.scoreRate}%</span></div></div>)}</div><ErrorMessage error={trainingError} /></section>)}
     </div><aside className="study-assistant"><AIPanel key={exam.examId} course={exam.course} examId={exam.examId} gradingId={completed ? active.gradingId : undefined} chatMode={service?.chatMode} /></aside></div>
   </div>
 }
