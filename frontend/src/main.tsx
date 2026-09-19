@@ -6,5 +6,7 @@ import './styles/home.css'
 import './styles/workspace.css'
 import './styles/aipanel.css'
 import './styles/study.css'
+import './styles/question-bank.css'
+
 
 createRoot(document.getElementById('root')!).render(<BrowserRouter><App /></BrowserRouter>)

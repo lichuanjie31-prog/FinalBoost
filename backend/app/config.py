@@ -76,6 +76,13 @@ class Settings:
             ).split(",")
         )
     )
+    admin_usernames: tuple[str, ...] = field(
+        default_factory=lambda: tuple(
+            name.strip().lower()
+            for name in os.getenv("ADMIN_USERNAMES", "").split(",")
+            if name.strip()
+        )
+    )
 
     # LLM configuration
     llm_api_key: str = field(default_factory=lambda: os.getenv("LLM_API_KEY", ""))
@@ -131,6 +138,9 @@ class Settings:
         if min(self.marking_submit_interval, self.marking_poll_interval, self.marking_request_timeout,
                self.qwen_marking_timeout) <= 0:
             raise RuntimeError("Marking durations must be positive")
+        configured_admins = self.admin_usernames.split(",") if isinstance(self.admin_usernames, str) else self.admin_usernames
+        self.admin_usernames = tuple(dict.fromkeys(name.strip().lower() for name in configured_admins if name.strip()))
+
 
     @property
     def secure_cookie(self):

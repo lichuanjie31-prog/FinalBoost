@@ -28,6 +28,7 @@ class Credentials(StrictModel):
 class UserOut(BaseModel):
     userId: str
     username: str
+    role: Literal["student", "admin"] = "student"
 
 class AuthOut(BaseModel):
     accessToken: str

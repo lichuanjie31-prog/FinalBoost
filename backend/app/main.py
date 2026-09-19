@@ -12,6 +12,7 @@ from .db import Database
 from .auth import router as auth_router, current_user
 from .common import new_id
 from .business import router as business_router
+from .modules.question_banks.router import router as question_banks_router
 from .grading import GradingWorker
 from .schemas import ErrorEnvelope
 from .marking.router import router as marking_router
@@ -105,15 +106,21 @@ def create_app(**kwargs):
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With"],
     )
 
-    def error_response(status, message):
+    def error_response(status, message, code=None):
+        # A module may pass its own business code (the question bank does); without
+        # one the generic status-derived code is used.
         return JSONResponse(
             status_code=status,
-            content={"code": status * 100 + 1, "message": message, "data": None, "requestId": new_id()},
+            content={"code": code or status * 100 + 1, "message": message, "data": None, "requestId": new_id()},
             headers={"Cache-Control": "no-store"},
         )
 
     @app.exception_handler(StarletteHTTPException)
     async def http_error(request: Request, exc: HTTPException):
+        # A dict detail carries a module-specific business code. str() on it would
+        # emit a Python repr and lose the code the frontend switches on.
+        if isinstance(exc.detail, dict):
+            return error_response(exc.status_code, exc.detail.get("message", ""), exc.detail.get("code"))
         return error_response(exc.status_code, str(exc.detail))
 
     @app.exception_handler(RequestValidationError)
@@ -157,6 +164,7 @@ def create_app(**kwargs):
     app.include_router(business_router)
     app.include_router(marking_router)
     app.include_router(agent_router)
+    app.include_router(question_banks_router)
 
     return app
 

@@ -153,7 +153,11 @@
   .workspace-header>div{gap:12px}
   .account-name{display:none}
   .workspace-body{display:block}
-  .workspace-nav{display:none}
+  .workspace-nav{position:sticky;top:56px;z-index:30;display:flex;flex-direction:row;gap:5px;overflow-x:auto;border-right:0;border-bottom:1px solid var(--border);padding:8px 14px;background:rgba(250,250,249,.96);scrollbar-width:none}
+  .workspace-nav::-webkit-scrollbar{display:none}
+  .workspace-nav>.label-text,.workspace-nav>span.nav-planned,.workspace-nav>.nav-note,.workspace-nav>.nav-home{display:none}
+  .workspace-nav>a{flex:0 0 auto;padding:8px 11px;white-space:nowrap}
+  .workspace-nav>a svg{width:15px;height:15px}
   .workspace-main{padding:24px 18px 40px}
   .workspace-title{flex-wrap:wrap;gap:16px}
   .workspace-title h1{font-size:26px}
