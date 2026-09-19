@@ -2,11 +2,13 @@
 
 > 2026-09-19：批改已改为**多 Provider 架构**。**当前推荐方案：千问视觉（Qwen VL，默认）**；
 > 腾讯云试题批改保留，可用 `MARKING_PROVIDER=tencent` 切换。
-> 配置、Schema 与未验收项见 [千问批改接入说明](docs/qwen-marking.md)
+> 配置与 Schema 见 [千问批改接入说明](docs/qwen-marking.md)
 > 与 [腾讯云批改接入说明](docs/tencent-marking.md)；工作台功能边界见 [备考工作台说明](docs/study-workspace.md)。
 > **真实调用验收状态**：千问视觉批改与真实对话已于 2026-09-19 用真实凭据验收通过
-> （真实手写答卷识别 7 题、逐题判定与解析；真实模型工具调用闭环）；
-> 腾讯云真实调用尚未验收（服务未开通）。文中凡标注「模拟」「离线」「fixture」处均非真实结果。
+> （真实手写答卷识别 7 题、逐题判定与解析；真实模型工具调用闭环）。
+> 腾讯云 Provider 保留为可切换选项，但**不纳入本次验收范围**（服务未开通）。
+> 只配置千问（无任何腾讯云凭据）即可完整运行，已实测。
+> 文中凡标注「模拟」「离线」「fixture」处均非真实结果。
 
 期末备考助手。从一份试卷出发，看清薄弱知识点，整理目标，逐步复习。
 
@@ -172,7 +174,7 @@ cd frontend && npm run check:generated
 | 前端构建与类型检查 | 通过 |
 | 合约校验 | 通过（集成后为 55 路径，见上方「验收命令」） |
 | 真实千问调用 | **已验收**（2026-09-19 更新凭据后：识别 7 题、逐题判定与解析） |
-| 真实腾讯云调用 | **未验收**（服务未开通，见 tencent-marking.md） |
+| 真实腾讯云调用 | **不在本次验收范围**（服务未开通；代码与 20 项测试保留，可用 `MARKING_PROVIDER=tencent` 切换） |
 
 ## 验收结果摘要（2026-09-16）
 
@@ -288,10 +290,10 @@ $env:MARKING_MODE = "fixture"; $env:MARKING_PROVIDER = "qwen"
   其中 1 题学生未作答被正确保留为「未判定」而非错题，`totalScore=None`
   （无评分依据不给分）。真实对话（`qwen-plus`，`chatMode=llm`）能引用本次批改的题号并
   分步讲解，且会自行调用 `get_study_summary` / `query_weak_points` 等工具后作答。
-- **真实腾讯云调用未验收**: 凭据配置通过 readiness（mode=live、region=ap-guangzhou），
-  但用空白测试图提交得到 `InvalidProviderResult`；历史上曾返回
-  `FailedOperation.UnOpenError`「服务未开通」。真实验收需要服务开通 + 一张真实答卷照片，
-  本次未把用户真实试卷发往腾讯云。
+- **腾讯云不在本次验收范围**（交付决策，非遗留缺陷）：服务未开通，历史上真实调用返回过
+  `FailedOperation.UnOpenError`「服务未开通」，用空白图提交则得到 `InvalidProviderResult`。
+  代码、Schema、fixture 边界测试（20 项）与浏览器用例全部保留，`MARKING_PROVIDER=tencent`
+  仍可切换；只是不作为交付路径验收。**只配千问、不填任何腾讯云凭据时服务可正常启动并真实批改**（已实测）。
 - **真实模型调用成本**: 每次批改的 token 用量会写入任务并显示在页面上（`usage_json`），
   可用 provenance 追溯到具体模型与耗时。
 - **真实模型失败一律不回退分数**: 上述两条失败路径下 `result` 均为空，界面显示失败与错误码，

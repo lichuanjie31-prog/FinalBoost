@@ -333,4 +333,13 @@ feature/myself-ai 的批改与 AI 修复之上，每条分支合入后跑最小�
   `query_weak_points_context`，并基于返回的真实数据作答（1 场考试 / 1 次云端批改 / 暂无薄弱点诊断）。
 - 附带健壮性证据：RAG(Qdrant) 返回 502 时被捕获降级为「RAG search failed」，未影响对话。
 
-**仍未验收**：腾讯云真实调用。需要服务开通 + 一张真实答卷照片；本次未发送用户真实试卷到腾讯云。
+**腾讯云：本次不纳入验收范围（交付决策）**
+服务未开通；历史上真实调用返回 `FailedOperation.UnOpenError`，空白图提交得到 `InvalidProviderResult`。
+代码、Schema、20 项 fixture 边界测试与浏览器用例全部保留，`MARKING_PROVIDER=tencent` 仍可切换，
+只是不作为交付路径验收。
+
+### 只配千问的启动实测（评审者场景）
+把 `TENCENTCLOUD_SECRET_ID`/`_SECRET_KEY`/`_TOKEN` 全部置空、`MARKING_MODE=live`、
+`MARKING_PROVIDER=qwen` 启动：`status=ok`、`markingMode=live`、`markingConfigured=true`，
+readiness 返回 `provider=qwen model=qwen-vl-plus ready=true`。即**克隆项目只填一个
+DashScope Key 就能跑真实 AI**，无需任何腾讯云凭据。
