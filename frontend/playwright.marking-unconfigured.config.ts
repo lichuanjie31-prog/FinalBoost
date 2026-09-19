@@ -18,6 +18,8 @@ export default defineConfig({
         ALLOWED_ORIGINS: 'http://127.0.0.1:5176',
         PORT: '8003',
         MARKING_MODE: 'tencent',
+        // 测试固定用示例对话：不继承开发者 .env 里的真实模型 Key
+        LLM_API_KEY: '',
         // Blank credentials guarantee the unconfigured state regardless of the host env.
         TENCENTCLOUD_SECRET_ID: '',
         TENCENTCLOUD_SECRET_KEY: '',

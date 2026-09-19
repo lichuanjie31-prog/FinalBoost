@@ -18,6 +18,8 @@ export default defineConfig({
         ALLOWED_ORIGINS: 'http://127.0.0.1:5178',
         PORT: '8005',
         MARKING_MODE: 'qwen',
+        // 测试固定用示例对话：不继承开发者 .env 里的真实模型 Key
+        LLM_API_KEY: '',
         MARKING_PROVIDER: 'qwen',
         // Blank credentials guarantee the unconfigured state regardless of host env.
         DASHSCOPE_API_KEY: '',

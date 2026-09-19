@@ -17,10 +17,15 @@
     "generate:api": "openapi-typescript ../contracts/openapi.json -o src/api/generated.ts"
   },
   "dependencies": {
+    "katex": "^0.18.7",
     "lucide-react": "1.46.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "react-router-dom": "7.18.4"
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "7.18.4",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

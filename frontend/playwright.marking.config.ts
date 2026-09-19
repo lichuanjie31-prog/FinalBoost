@@ -17,6 +17,8 @@ export default defineConfig({
       env: {
         ALLOWED_ORIGINS: 'http://127.0.0.1:5175',
         MARKING_MODE: 'fixture',
+        // 测试固定用示例对话：不继承开发者 .env 里的真实模型 Key
+        LLM_API_KEY: '',
         MARKING_PROVIDER: 'qwen',
         // Pinned so the assertions cannot drift with a developer's backend/.env.
         QWEN_MARKING_MODEL: 'qwen3-vl-plus',

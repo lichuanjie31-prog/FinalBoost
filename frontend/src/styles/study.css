@@ -90,8 +90,41 @@
 .chat-suggestions button:hover{background:var(--blue-soft);color:var(--blue)}
 .study-message{margin-bottom:24px;min-width:0}
 .message-author{display:block;font-size:12px;color:var(--ink-soft);margin-bottom:8px}
-.message-content{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.9}
-.study-message.user .message-content{background:var(--blue-soft);padding:12px 16px;border-radius:10px}
+.message-content{overflow-wrap:anywhere;font-size:14px;line-height:1.9;min-width:0}
+/* 用户输入按原样保留换行；助手回答交给 Markdown 渲染，不能再用 pre-wrap 叠空格 */
+.study-message.user .message-content{white-space:pre-wrap;background:var(--blue-soft);padding:12px 16px;border-radius:10px}
+/* ── 助手回答的 Markdown / LaTeX 排版（面板较窄，公式与表格横向滚动）── */
+.study-message.assistant .message-content>:first-child{margin-top:0}
+.study-message.assistant .message-content>:last-child{margin-bottom:0}
+.study-message.assistant .message-content p{margin:0 0 10px}
+.study-message.assistant .message-content h1,
+.study-message.assistant .message-content h2,
+.study-message.assistant .message-content h3,
+.study-message.assistant .message-content h4{margin:16px 0 8px;line-height:1.5;font-weight:600}
+.study-message.assistant .message-content h1{font-size:17px}
+.study-message.assistant .message-content h2{font-size:16px}
+.study-message.assistant .message-content h3{font-size:15px}
+.study-message.assistant .message-content h4{font-size:14px}
+.study-message.assistant .message-content ul,
+.study-message.assistant .message-content ol{margin:0 0 10px;padding-left:22px}
+.study-message.assistant .message-content li{margin:4px 0}
+.study-message.assistant .message-content li>ul,
+.study-message.assistant .message-content li>ol{margin:4px 0 0}
+.study-message.assistant .message-content strong{font-weight:600;color:var(--ink)}
+.study-message.assistant .message-content blockquote{margin:0 0 10px;padding:2px 0 2px 12px;border-left:3px solid var(--border);color:var(--ink-soft)}
+.study-message.assistant .message-content code{font-family:var(--font-mono);font-size:12px;background:var(--surface-warm);border:1px solid var(--border-light);border-radius:4px;padding:1px 5px}
+.study-message.assistant .message-content pre{background:var(--surface-warm);border:1px solid var(--border-light);border-radius:7px;padding:10px 12px;margin:0 0 10px;overflow-x:auto}
+.study-message.assistant .message-content pre code{background:none;border:0;padding:0}
+.study-message.assistant .message-content table{display:block;width:max-content;max-width:100%;overflow-x:auto;border-collapse:collapse;margin:0 0 10px;font-size:13px}
+.study-message.assistant .message-content th,
+.study-message.assistant .message-content td{border:1px solid var(--border-light);padding:6px 10px;text-align:left}
+.study-message.assistant .message-content th{background:var(--surface-warm);font-weight:600}
+.study-message.assistant .message-content hr{border:0;border-top:1px solid var(--border-light);margin:14px 0}
+.study-message.assistant .message-content a{color:var(--blue);text-decoration:underline;text-underline-offset:2px}
+/* 行内与独立公式：独立公式在窄栏里横向滚动，不撑破面板 */
+.study-message.assistant .message-content .katex{font-size:1.02em}
+.study-message.assistant .message-content .katex-display{margin:10px 0;padding:2px 0;overflow-x:auto;overflow-y:hidden}
+.study-message.assistant .message-content .katex-error{color:#b42336}
 .study-tool{margin-top:10px;border:1px solid var(--border);border-radius:7px;padding:10px;font-size:12px}
 .study-tool summary{cursor:pointer;display:flex;gap:8px;align-items:center;min-height:24px}
 .study-tool pre{white-space:pre-wrap;overflow-wrap:anywhere;margin-top:12px;max-height:260px;overflow:auto}
@@ -150,3 +183,5 @@
 .mark-fields dd{flex:1;min-width:0;color:var(--ink-soft);overflow-wrap:anywhere}
 
 @media(max-width:700px){.workspace-body{display:block}.workspace-main{padding:24px 16px 40px}.workspace-title h1{font-size:27px}.study-intro{grid-template-columns:1fr;padding:24px;gap:16px}.study-intro h2{font-size:28px}.study-intro li{padding:14px 0}.study-list-heading{align-items:flex-start;flex-direction:column;gap:8px}.exam-grid{grid-template-columns:1fr}.exam-card{padding:22px}.exam-card-bottom{gap:12px;flex-wrap:wrap}.study-steps{gap:12px;justify-content:space-between;font-size:12px;align-items:flex-start}.study-steps span{flex-direction:column;gap:8px;align-items:flex-start}.study-materials .panel{padding:20px}.study-chat{height:680px;max-height:none}.study-chat-log{padding:20px}.study-chat-form textarea,.form-stack input{font-size:16px}.days-left strong{font-size:28px}.study-columns{gap:20px}.diagnosis-summary{grid-template-columns:1fr;gap:16px}.diagnosis-summary>div:nth-child(2){border:0;padding:0}.outline-item{grid-template-columns:1fr}.question-scores{font-size:12px}.marking-page{padding:14px}.mark-fields>div{flex-direction:column;gap:2px}.mark-fields dt{width:auto}}
+/* Markdown 渲染器尚未加载时按纯文本兜底，保持换行可读 */
+.markdown-pending{white-space:pre-wrap}

@@ -1,6 +1,9 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Suspense, lazy, useEffect, useRef, useState, type FormEvent } from 'react'
 import { Sparkles, Send, Loader2, Wrench, RotateCcw } from 'lucide-react'
 import { agent, type ToolCall } from '../api/agent'
+// Markdown + KaTeX 只在助手真的要渲染回答时才加载：它比整个首屏还大，
+// 没有必要让首页/登录/工作台为它付出体积。加载完成前先按纯文本显示。
+const Markdown = lazy(() => import('./Markdown').then(m => ({ default: m.Markdown })))
 
 interface Props { course?: string; examId?: string; gradingId?: string; markingJobIds?: string[]; chatMode?: 'mock' | 'llm' }
 type Message = { id: string; role: 'user' | 'assistant'; content: string; tools: ToolCall[] }
@@ -45,7 +48,9 @@ export function AIPanel({ course, examId, gradingId, markingJobIds, chatMode }: 
     <div className="chat-context"><span className="context-dot" />{course || '当前考试'}<span>{gradingId || markingJobIds?.length ? `已关联所选批改结果${markingJobIds?.length ? `（${markingJobIds.length} 页）` : ''}` : '等待上传试卷'}</span></div>
     <div ref={log} className="study-chat-log" role="log" aria-label="备考对话记录" aria-live="polite" aria-relevant="additions text">
       {!messages.length && <div className="chat-welcome"><span className="chat-welcome-mark"><Sparkles size={28} /></span><h3>把不会的，弄明白。</h3><p>上传试卷后，和我一起梳理失分原因。也可以直接问一道题。</p><div className="chat-suggestions">{['分析这次判卷结果', '帮我讲解错题', '我应该先复习什么？'].map(text => <button type="button" key={text} disabled={sending || !chatMode} onClick={() => void send(text)}>{text}<span aria-hidden="true">↗</span></button>)}</div></div>}
-      {messages.map(message => <article key={message.id} className={'study-message ' + message.role}><span className="message-author">{message.role === 'user' ? '你' : '备考助手'}</span><div className="message-content">{message.content}</div>{message.tools.map((tool, i) => <details className="study-tool" key={tool.id + i}><summary><Wrench size={14} />{labels[tool.name.replace(/_context$/, '')] || '学习资料'}</summary><pre>{tool.result || '已完成查询'}</pre></details>)}</article>)}
+      {messages.map(message => <article key={message.id} className={'study-message ' + message.role}><span className="message-author">{message.role === 'user' ? '你' : '备考助手'}</span><div className="message-content">{message.role === 'assistant'
+        ? <Suspense fallback={<span className="markdown-pending">{message.content}</span>}><Markdown>{message.content}</Markdown></Suspense>
+        : message.content}</div>{message.tools.map((tool, i) => <details className="study-tool" key={tool.id + i}><summary><Wrench size={14} />{labels[tool.name.replace(/_context$/, '')] || '学习资料'}</summary><pre>{tool.result || '已完成查询'}</pre></details>)}</article>)}
       {sending && <p className="chat-thinking" role="status"><Loader2 size={16} className="spin" />正在结合当前考试分析…</p>}
     </div>
     {error && <div className="chat-error" role="alert">{error} 原问题已保留，可重新发送。</div>}

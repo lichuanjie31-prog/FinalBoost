@@ -18,6 +18,8 @@ export default defineConfig({
         ALLOWED_ORIGINS: 'http://127.0.0.1:5177',
         PORT: '8004',
         MARKING_MODE: 'fixture',
+        // 测试固定用示例对话：不继承开发者 .env 里的真实模型 Key
+        LLM_API_KEY: '',
         MARKING_PROVIDER: 'tencent',
         MARKING_SUBMIT_INTERVAL: '0.2',
         MARKING_POLL_INTERVAL: '0.2',
