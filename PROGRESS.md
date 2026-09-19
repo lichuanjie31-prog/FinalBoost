@@ -66,3 +66,11 @@
 - 失败到恢复证据：`artifacts/marking-failure.png`、`artifacts/marking-recovered.png`、
   `artifacts/browser-marking-results.json`；缺密钥证据：`artifacts/marking-not-configured.png`。
 - 未验收项见 BLOCKED.md 与 `docs/tencent-marking.md` 第 6 节。
+
+### 交付记录
+- 提交：`a9aaaee`（57 个文件，+8911 / -996），已推送 `origin/feature/myself-ai`。
+- 推送后核对：本地与远端提交号一致，均为 `a9aaaee67062b132578eeb9c52c4dce36a9c6eb5`，未强推、未合并 master。
+- 提交内容已核对：不含 `.env`、数据库、上传图片、`report_work/`、`artifacts/`。
+- 一并提交了本分支既有的 LangChain / MySQL 改动（`backend/app/agent/**`、`database.py`、
+  `requirements.txt`、`debug_llm.py`、`init_mysql.py`、根目录 `test_agent.py`、
+  `docs/study-workspace.md` 等）。本轮对这些文件只读未改，仅随分支一并交付。
