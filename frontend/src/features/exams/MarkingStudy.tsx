@@ -53,6 +53,8 @@ export function MarkingStudy({ id }: { id: string }) {
   const fileInput = useRef<HTMLInputElement>(null)
   const intent = useRef(crypto.randomUUID())
   const jobsRef = useRef(jobs); jobsRef.current = jobs
+  // 已受理的页（按文件 key）。重试时跳过它们，避免重复提交已受理的页。
+  const accepted = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const controller = new AbortController()
@@ -131,20 +133,24 @@ export function MarkingStudy({ id }: { id: string }) {
           setFiles([...current])
         }
       }
-      const created: MarkingJob[] = []
+      // 每受理一页就并入结果列表：该页立刻显示并进入轮询，
+      // 不必等所有页都成功——否则后一页失败会让已受理的页一起消失。
+      // 已受理的页在重试时直接跳过：页码与 requestKey 都不变，
+      // 既不会把已受理的页重复提交给供应商，也不会重复计费。
       for (let i = 0; i < current.length; i++) {
+        const entry = current[i]
+        if (accepted.current.has(entry.key)) continue
         setProgress(`正在提交第 ${i + 1} / ${current.length} 页批改任务`)
-        created.push(await submitPage(current[i].uploadedId!, i))
-      }
-      setJobs(old => {
-        const merged = [...old]
-        created.forEach(job => {
+        const job = await submitPage(entry.uploadedId!, i)
+        accepted.current.add(entry.key)
+        setJobs(old => {
+          const merged = [...old]
           const at = merged.findIndex(j => j.jobId === job.jobId)
           if (at >= 0) merged[at] = job; else merged.push(job)
+          return merged.sort((a, b) => a.pageIndex - b.pageIndex)
         })
-        return merged.sort((a, b) => a.pageIndex - b.pageIndex)
-      })
-      setFiles([]); intent.current = crypto.randomUUID()
+      }
+      setFiles([]); accepted.current = new Set(); intent.current = crypto.randomUUID()
     } catch (e) { setUploadError((e as Error).message) }
     finally { submitLock.current = false; setBusy(false); setProgress('') }
   }

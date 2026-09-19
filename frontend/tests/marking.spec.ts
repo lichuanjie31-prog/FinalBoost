@@ -121,3 +121,71 @@ test('供应商失败显示失败且不给示例分数，恢复后继续成功',
   await expect(page.getByTestId('marking-page').nth(1).getByTestId('page-status')).toHaveText('批改失败')
   await page.screenshot({ path: '../artifacts/marking-recovered.png', fullPage: true })
 })
+
+// 多页提交：第一页受理后必须立刻显示并进入轮询；第二页失败后重试，
+// 不能把已受理的第一页再提交一次（否则供应商会被重复调用/重复计费）。
+test('多页提交：第一页受理后立即显示并轮询，第二页失败重试不再提交第一页', async ({ page }) => {
+  await createExam(page)
+  await expect(page.getByTestId('marking-fixture')).toBeVisible()
+
+  const posted: Array<{ pageIndex: number; requestKey: string }> = []
+  await page.route('**/api/v1/marking/jobs', async route => {
+    const request = route.request()
+    if (request.method() !== 'POST') return route.continue()
+    const body = request.postDataJSON() as { pageIndex: number; requestKey: string }
+    posted.push(body)
+    if (posted.length === 2) {
+      // 注入第二页失败，验证已受理的第一页不受影响
+      return route.fulfill({
+        status: 500, contentType: 'application/json',
+        body: JSON.stringify({ code: 50001, message: '第 2 页提交失败（用例注入）', data: null, requestId: 'test' }),
+      })
+    }
+    return route.continue()
+  })
+
+  await page.getByLabel('选择答题图片').setInputFiles([page1, { ...page1, name: 'page2.png' }])
+  await page.getByRole('button', { name: '上传并开始批改' }).click()
+
+  await expect(page.getByRole('alert')).toContainText('第 2 页提交失败', { timeout: 20000 })
+
+  // 第一页已受理：立即出现在结果列表，并继续轮询到完成
+  const pages = page.getByTestId('marking-page')
+  await expect(pages).toHaveCount(1)
+  await expect(pages.first()).toContainText('第 1 页')
+  await expect(pages.first().getByText('批改完成')).toBeVisible({ timeout: 20000 })
+
+  // 重试：只提交尚未受理的第二页；第一页的请求总数保持为 1
+  const before = posted.length
+  await page.getByRole('button', { name: '上传并开始批改' }).click()
+  await expect.poll(() => posted.slice(before).map(item => item.pageIndex), { timeout: 20000 }).toEqual([1])
+  expect(posted.filter(item => item.pageIndex === 0)).toHaveLength(1)
+  await expect(page.getByTestId('marking-page')).toHaveCount(2, { timeout: 20000 })
+  await page.screenshot({ path: '../artifacts/marking-multipage-retry.png', fullPage: true })
+})
+
+// 批改完成后向助手追问：批改结果必须真的关联进对话上下文，
+// 助手回答里要能看到这次批改的题目内容，而不是空手作答。
+test('批改完成后在助手处追问错题，批改结果已进入对话上下文', async ({ page }) => {
+  await createExam(page)
+  const examId = page.url().split('/').pop()!
+  await expect(page.getByTestId('marking-fixture')).toBeVisible()
+
+  await page.getByLabel('选择答题图片').setInputFiles(page1)
+  await page.getByRole('button', { name: '上传并开始批改' }).click()
+  await expect(page.getByText('批改完成', { exact: true })).toBeVisible({ timeout: 20000 })
+  await expect(page.getByText(/已关联所选批改结果/)).toBeVisible()
+
+  const sent = page.waitForRequest(r => r.url().endsWith('/agent/chat') && r.method() === 'POST')
+  await page.getByRole('button', { name: '分析这次判卷结果' }).click()
+  const body = (await sent).postDataJSON()
+  expect(body.examId).toBe(examId)
+  expect(body.markingJobIds).toHaveLength(1)
+  expect(body.gradingId).toBeUndefined()
+
+  await expect(page.locator('.study-message.user')).toHaveCount(1)
+  await expect(page.locator('.study-message.assistant')).toHaveCount(1)
+  // 工具卡片里应当是本次批改的真实题目内容（fixture 数据集里的第 2 题）
+  await expect(page.locator('.study-tool pre')).toContainText('判断级数敛散性')
+  await page.screenshot({ path: '../artifacts/marking-ai-explain.png', fullPage: true })
+})
