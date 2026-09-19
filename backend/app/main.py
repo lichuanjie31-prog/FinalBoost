@@ -16,45 +16,125 @@ from .grading import GradingWorker
 from .schemas import ErrorEnvelope
 from .marking.router import router as marking_router
 from .marking.provider import TencentMarkingProvider
+from .marking.fixture import FixtureMarkingProvider
 from .agent.router import router as agent_router
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def create_app(**kwargs):
     settings = Settings(**kwargs)
     db = Database(settings.data_dir)
+
+    # Initialize RAG service (lazy, optional)
+    rag_service = None
+    if settings.rag_enabled and settings.embedding_api_key:
+        try:
+            from .agent.rag import RagService
+            rag_service = RagService(
+                qdrant_url=settings.qdrant_url,
+                embedding_base_url=settings.embedding_base_url,
+                embedding_api_key=settings.embedding_api_key,
+                embedding_model=settings.embedding_model,
+                collection=settings.qdrant_collection,
+            )
+            logger.info("RAG service configured: qdrant=%s, collection=%s",
+                       settings.qdrant_url, settings.qdrant_collection)
+        except Exception:
+            logger.warning("RAG service initialization failed, RAG disabled")
+
     @asynccontextmanager
     async def lifespan(app):
         settings.validate()
         db.migrate()
+
         worker = GradingWorker(db)
-        if settings.llm_api_key:
+        if settings.grading_mode == "llm":
             worker.configure_llm(settings)
         app.state.worker = worker
         worker.start()
-        try: yield
-        finally: worker.close()
-    app = FastAPI(title="FinalBoost", version="1.0.0", lifespan=lifespan, responses={code:{"model":ErrorEnvelope} for code in (400,401,403,404,409,413,415,422,429,500)})
-    app.state.settings, app.state.db = settings, db
-    app.state.marking_provider = TencentMarkingProvider()
-    app.add_middleware(CORSMiddleware, allow_origins=list(settings.origins), allow_credentials=True, allow_methods=["GET","POST","DELETE"], allow_headers=["Authorization","Content-Type","Idempotency-Key","X-Requested-With"])
+        try:
+            yield
+        finally:
+            worker.close()
+
+    app = FastAPI(
+        title="FinalBoost",
+        version="2.0.0",
+        lifespan=lifespan,
+        responses={code: {"model": ErrorEnvelope} for code in (400, 401, 403, 404, 409, 413, 415, 422, 429, 500)}
+    )
+
+    # Store services in app state
+    app.state.settings = settings
+    app.state.db = db
+    app.state.rag_service = rag_service
+    # MARKING_MODE=fixture swaps only the Tencent SDK boundary for a local stub;
+    # every other layer stays real.
+    app.state.marking_provider = (FixtureMarkingProvider(settings) if settings.marking_mode == "fixture"
+                                  else TencentMarkingProvider(settings))
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(settings.origins),
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "DELETE", "PATCH"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With"],
+    )
+
     def error_response(status, message):
-        return JSONResponse(status_code=status, content={"code":status*100+1,"message":message,"data":None,"requestId":new_id()}, headers={"Cache-Control":"no-store"})
+        return JSONResponse(
+            status_code=status,
+            content={"code": status * 100 + 1, "message": message, "data": None, "requestId": new_id()},
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.exception_handler(StarletteHTTPException)
-    async def http_error(request: Request, exc: HTTPException): return error_response(exc.status_code,str(exc.detail))
+    async def http_error(request: Request, exc: HTTPException):
+        return error_response(exc.status_code, str(exc.detail))
+
     @app.exception_handler(RequestValidationError)
     async def validation_error(request: Request, exc: RequestValidationError):
         fields = ", ".join(str(e["loc"][-1]) for e in exc.errors())
         return error_response(400, f"参数不符合要求：{fields}")
+
     @app.exception_handler(Exception)
-    async def internal_error(request: Request, exc: Exception): return error_response(500,"服务暂时不可用，请稍后重试")
+    async def internal_error(request: Request, exc: Exception):
+        logger.exception("Unhandled exception")
+        return error_response(500, "服务暂时不可用，请稍后重试")
+
     @app.get("/api/v1/health")
     def health():
-        with db.transaction() as conn: conn.execute("SELECT 1").fetchone()
-        mode = "llm" if settings.llm_api_key else "mock"
-        return {"code":0,"message":"success","data":{"status":"ok","gradingMode":mode},"requestId":new_id()}
+        with db.transaction() as conn:
+            conn.execute("SELECT 1").fetchone()
+        mode = settings.grading_mode
+        rag_status = "enabled" if rag_service else "disabled"
+        readiness = settings.marking_readiness()
+        return {
+            "code": 0,
+            "message": "success",
+            "data": {
+                "status": "ok",
+                "gradingMode": mode,
+                "chatMode": "llm" if settings.llm_api_key else "mock",
+                "rag": rag_status,
+                "version": "2.0.0-langchain",
+                # Marks whether the real Tencent pathway is usable, so the UI never
+                # presents a demo score as a real marking result.
+                "markingMode": readiness["mode"],
+                "markingConfigured": readiness["configured"],
+                "markingMessage": readiness["message"],
+            },
+            "requestId": new_id(),
+        }
+
     app.include_router(auth_router)
     app.include_router(business_router)
     app.include_router(marking_router)
     app.include_router(agent_router)
+
     return app
+
 
 app = create_app()

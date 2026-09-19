@@ -54,6 +54,10 @@ def run_agent_turn(db, user_id: str, session_id: str, user_message: str, llm: LL
             break
 
         # Process tool calls
+        # Ensure each tool call has required "type" field for API compatibility
+        for tc in last_tool_calls_json:
+            tc.setdefault("type", "function")
+
         messages.append(assistant_msg)  # add assistant message with tool_calls to context
 
         for tc in last_tool_calls_json:

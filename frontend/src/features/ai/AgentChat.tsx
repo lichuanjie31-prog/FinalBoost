@@ -112,6 +112,7 @@ export function AgentChat() {
   // Refs
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  const justSentRef = useRef(false)  // guard: skip useEffect reload during sendMessage
 
   // Load sessions
   useEffect(() => {
@@ -126,6 +127,8 @@ export function AgentChat() {
   // Load messages when session changes
   useEffect(() => {
     if (!sessionId) { setMessages([]); return }
+    // Skip reload if sendMessage just added these messages locally
+    if (justSentRef.current) { justSentRef.current = false; return }
     const ctrl = new AbortController()
     setLoadingMessages(true)
     agent.messages(sessionId, ctrl.signal).then(setMessages).catch(() => {}).finally(() => {
@@ -164,6 +167,10 @@ export function AgentChat() {
     setMessages(prev => [...prev, userMsg])
 
     try {
+      // Mark guard BEFORE awaiting — prevents useEffect from reloading
+      // messages that sendMessage is about to add locally
+      if (!sessionId) justSentRef.current = true
+
       const res = await agent.chat(text.trim(), sessionId, courseParam || undefined)
 
       // Update session id if new
@@ -184,6 +191,7 @@ export function AgentChat() {
       // Refresh sessions list
       agent.sessions().then(setSessions).catch(() => {})
     } catch (e) {
+      justSentRef.current = false  // allow useEffect to reload on next session change
       setError((e as Error).message)
       // Remove optimistic user message on error
       setMessages(prev => prev.filter(m => m.id !== userMsg.id))

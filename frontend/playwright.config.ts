@@ -2,7 +2,9 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './tests',
-  testIgnore: '**/failure.spec.ts',
+  // These specs drive the marking backend, which the default server does not run;
+  // they have their own configs (playwright.marking*.config.ts).
+  testIgnore: ['**/failure.spec.ts', '**/marking.spec.ts', '**/marking-unconfigured.spec.ts'],
   fullyParallel: false,
   workers: 1,
   timeout: 30000,

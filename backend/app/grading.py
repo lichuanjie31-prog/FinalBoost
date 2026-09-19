@@ -5,6 +5,10 @@ import re
 import threading
 import time
 import httpx
+import math
+import io
+from PIL import Image
+from .schemas import GradingResult
 
 GRADING_PROMPT = """你是一位专业的考试判卷助手。请根据以下考试信息和答题图片，完成判卷任务。
 
@@ -73,7 +77,7 @@ class LlmGrader:
 
         with httpx.Client(timeout=self.timeout) as client:
             response = client.post(
-                f"{self.base_url}/v1/chat/completions",
+                f"{self.base_url if self.base_url.endswith('/v1') else self.base_url + '/v1'}/chat/completions",
                 headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                 json={"model": self.model, "messages": messages, "temperature": 0.1},
             )
@@ -96,11 +100,11 @@ class LlmGrader:
             try:
                 data = path.read_bytes()
                 b64 = base64.b64encode(data).decode()
-                suffix = path.suffix.lower().lstrip(".")
-                mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(suffix, "image/png")
+                with Image.open(io.BytesIO(data)) as img:
+                    mime = {"JPEG": "image/jpeg", "PNG": "image/png", "WEBP": "image/webp"}[img.format]
                 content.append({"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}})
             except Exception:
-                logging.getLogger(__name__).warning("Failed to read image %s", path)
+                raise ValueError("无法读取试卷图片，请重新上传")
         return content
 
     def _parse_response(self, text: str, max_score: float) -> dict:
@@ -111,19 +115,32 @@ class LlmGrader:
         data = json.loads(match.group())
         if "questions" not in data or "maxScore" not in data:
             raise ValueError("LLM response missing required fields")
-        total = data.get("totalScore")
-        if total is not None:
-            data["totalScore"] = round(float(total), 1)
-        data["maxScore"] = float(data["maxScore"])
-        for q in data["questions"]:
+        if not data["questions"]:
+            raise ValueError("模型未识别出可评分的题目")
+        seen_ids = set()
+        for i, q in enumerate(data["questions"], 1):
             q["score"] = round(float(q["score"]), 1) if q.get("score") is not None else None
             q["maxScore"] = float(q["maxScore"])
-            q["correct"] = q.get("correct")
-            q.setdefault("knowledgePointIds", [])
-            q.setdefault("knowledgePoints", [])
-            q.setdefault("errorType", None)
+            if not math.isfinite(q["maxScore"]) or q["maxScore"] <= 0:
+                raise ValueError("题目满分无效")
+            if q["score"] is not None and (not math.isfinite(q["score"]) or not 0 <= q["score"] <= q["maxScore"]):
+                raise ValueError("题目得分超出范围")
+            q["questionId"] = str(q.get("questionId") or f"q{i}")
+            if q["questionId"] in seen_ids:
+                raise ValueError("题目编号重复")
+            seen_ids.add(q["questionId"])
+            q["correct"] = q["score"] == q["maxScore"] if q["score"] is not None else None
+            q["knowledgePointIds"] = q.get("knowledgePointIds") or [f"q{i}_kp"]
+            q["knowledgePoints"] = q.get("knowledgePoints") or ["待确认知识点"]
+            q["errorType"] = None if q.get("errorType") in (None, "null") else q["errorType"]
             q.setdefault("errorReason", None)
-        return data
+        if not math.isclose(sum(q["maxScore"] for q in data["questions"]), max_score, abs_tol=0.1):
+            raise ValueError("识别的题目满分与考试满分不一致，请上传完整试卷")
+        data["maxScore"] = max_score
+        data["totalScore"] = (round(sum(q["score"] for q in data["questions"]), 1)
+                              if all(q["score"] is not None for q in data["questions"]) else None)
+        return GradingResult.model_validate(data).model_dump()
+
 
 
 class MockGrader:
@@ -162,9 +179,9 @@ class GradingWorker:
 
     def configure_llm(self, settings):
         """Switch to LLM grader if configured."""
-        if settings.llm_api_key:
+        if settings.grading_mode == "llm" and (settings.grading_api_key or settings.llm_api_key):
             grader = LlmGrader()
-            grader.configure(settings.llm_api_key, settings.llm_model, settings.llm_base_url, settings.llm_timeout)
+            grader.configure(settings.grading_api_key or settings.llm_api_key, settings.grading_model or settings.llm_model, settings.grading_base_url or settings.llm_base_url, settings.llm_timeout)
             self.provider = grader
             logging.getLogger(__name__).info("Using LLM grader: %s", settings.llm_model)
 
@@ -187,85 +204,54 @@ class GradingWorker:
             self.wake.wait(delay)
 
     def tick(self):
+        # Claim and load one task quickly. Network I/O must not hold a database write lock.
         now = time.time()
-        next_delay = 0.5
         with self.database.transaction() as db:
-            rows = db.execute(
-                "SELECT * FROM grading_jobs WHERE status IN ('queued','running') ORDER BY created_at LIMIT 100"
+            db.execute(
+                "UPDATE grading_jobs SET status='failed',error_json=? WHERE status IN ('queued','running') AND deadline_at<=?",
+                (json.dumps({"code": 50401, "message": "判卷超时，请重新提交"}, ensure_ascii=False), now),
+            )
+            row = db.execute(
+                "SELECT * FROM grading_jobs WHERE status IN ('queued','running') ORDER BY created_at LIMIT 1"
+            ).fetchone()
+            if not row:
+                return 0.5
+            if row["status"] == "queued":
+                db.execute("UPDATE grading_jobs SET status='running',started_at=? WHERE id=?", (now, row["id"]))
+            if now < row["ready_at"] or row["scenario"] == "timeout":
+                next_at = row["deadline_at"] if row["scenario"] == "timeout" else min(row["ready_at"], row["deadline_at"])
+                return max(0.001, min(0.1, next_at - now))
+            row = dict(row)
+            exam = db.execute("SELECT course,max_score FROM exams WHERE id=?", (row["exam_id"],)).fetchone()
+            files = db.execute(
+                "SELECT f.storage_key FROM grading_files gf JOIN files f ON f.id=gf.file_id WHERE gf.grading_id=? ORDER BY gf.page_index",
+                (row["id"],),
             ).fetchall()
-            for row in rows:
-                error = None
-                if now >= row["deadline_at"]:
-                    error = {"code": 50401, "message": "判卷超时，请重新提交"}
-                else:
-                    if row["status"] == "queued":
-                        db.execute(
-                            "UPDATE grading_jobs SET status='running',started_at=? WHERE id=?",
-                            (now, row["id"]),
-                        )
-                    # Simulate delay for mock; LLM jobs run immediately
-                    if now < row["ready_at"] or row["scenario"] == "timeout":
-                        next_at = (
-                            row["deadline_at"]
-                            if row["scenario"] == "timeout"
-                            else min(row["ready_at"], row["deadline_at"])
-                        )
-                        next_delay = min(next_delay, max(0.001, next_at - now))
-                        continue
-                    if row["scenario"] == "unreadable":
-                        error = {"code": 42201, "message": "模拟场景：图片无法识别，请更换清晰图片"}
-                    elif row["scenario"] == "provider_error":
-                        error = {"code": 50201, "message": "模拟场景：判卷服务暂时不可用，请稍后重试"}
+            paths = [self.database.data_dir / "uploads" / f["storage_key"] for f in files]
 
-                if error:
-                    db.execute(
-                        "UPDATE grading_jobs SET status='failed',error_json=?,result_json=NULL WHERE id=?",
-                        (json.dumps(error, ensure_ascii=False), row["id"]),
-                    )
-                else:
-                    result = self._execute_grading(db, row)
-                    if result is None:
-                        error = {"code": 50201, "message": "判卷服务暂时不可用，请稍后重试"}
-                        db.execute(
-                            "UPDATE grading_jobs SET status='failed',error_json=?,result_json=NULL WHERE id=?",
-                            (json.dumps(error, ensure_ascii=False), row["id"]),
-                        )
-                    else:
-                        db.execute(
-                            "UPDATE grading_jobs SET status='succeeded',result_json=?,error_json=NULL WHERE id=?",
-                            (json.dumps(result, ensure_ascii=False), row["id"]),
-                        )
-        return next_delay
-
-    def _execute_grading(self, db, row):
-        """Execute grading for a single job. Returns result dict or None on failure."""
-        # Mock scenario jobs use mock grader
-        if row["scenario"] in ("unreadable", "provider_error", "timeout"):
-            if isinstance(self.provider, LlmGrader):
-                return MockGrader().result()
-            return self.provider.result()
-
-        # LLM grader: read files and send to model
-        if isinstance(self.provider, LlmGrader):
+        error, result = None, None
+        if row["source"] == "mock" and row["scenario"] in ("unreadable", "provider_error"):
+            code = 42201 if row["scenario"] == "unreadable" else 50201
+            error = {"code": code, "message": "模拟场景：图片无法识别，请更换清晰图片" if code == 42201 else "模拟场景：判卷服务暂时不可用，请稍后重试"}
+        else:
             try:
-                files = db.execute(
-                    "SELECT f.storage_key FROM grading_files gf JOIN files f ON f.id=gf.file_id WHERE gf.grading_id=? ORDER BY gf.page_index",
-                    (row["id"],),
-                ).fetchall()
-                file_paths = [
-                    self.database.data_dir / "uploads" / f["storage_key"]
-                    for f in files
-                ]
-                # Get exam info for context
-                exam = db.execute(
-                    "SELECT course, max_score FROM exams WHERE id=?", (row["exam_id"],)
-                ).fetchone()
-                course = exam["course"] if exam else "未知课程"
-                max_score = exam["max_score"] if exam else 100
-                return self.provider.grade(course, max_score, file_paths)
+                if row["source"] == "mock":
+                    result = MockGrader().result()
+                elif isinstance(self.provider, LlmGrader):
+                    result = self.provider.grade(exam["course"], exam["max_score"], paths)
+                else:
+                    raise ValueError("真实批改模型未配置，请检查服务配置后重新提交")
+            except ValueError as exc:
+                error = {"code": 42201, "message": str(exc)}
             except Exception:
-                logging.getLogger(__name__).exception("LLM grading failed for job %s", row["id"])
-                return None
-
-        # Mock grader: return fixed result
-        return self.provider.result()
+                logging.getLogger(__name__).exception("Grading failed for job %s", row["id"])
+                error = {"code": 50201, "message": "批改模型调用失败，请确认模型支持图片并检查服务配置后重试"}
+        if time.time() >= row["deadline_at"]:
+            error = {"code": 50401, "message": "判卷超时，请重新提交"}
+        with self.database.transaction() as db:
+            db.execute(
+                "UPDATE grading_jobs SET status=?,result_json=?,error_json=? WHERE id=? AND status='running'",
+                ("failed" if error else "succeeded", None if error else json.dumps(result, ensure_ascii=False),
+                 json.dumps(error, ensure_ascii=False) if error else None, row["id"]),
+            )
+        return 0.01

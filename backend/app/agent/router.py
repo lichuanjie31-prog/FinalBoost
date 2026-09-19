@@ -5,34 +5,37 @@ Endpoints:
 - GET    /api/v1/agent/sessions             — List user's chat sessions
 - GET    /api/v1/agent/sessions/{id}/messages — Get messages in a session
 - DELETE /api/v1/agent/sessions/{id}        — Delete a session
+- POST   /api/v1/agent/knowledge/upload     — Upload document to knowledge base
+- GET    /api/v1/agent/knowledge            — List knowledge documents
+- DELETE /api/v1/agent/knowledge/{id}       — Delete knowledge document
 """
 from __future__ import annotations
 import json
 import logging
 import time
-from fastapi import APIRouter, Depends, Request, HTTPException
+import uuid
+from fastapi import APIRouter, Depends, Request, HTTPException, UploadFile, File
 from ..auth import current_user
+from ..business import owned
 from ..common import envelope, fail, new_id
 from .schemas import ChatRequest, ChatResponse, SessionOut, MessageOut, ToolCallOut
-from .core import run_agent_turn, save_turn
-from .tools import LLMClient
+from .memory import MemoryManager
+from .llm import create_llm_from_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/agent", tags=["agent"])
 
 
-def _get_llm(request: Request) -> LLMClient | None:
+def _get_llm(request: Request):
     """Get or create an LLM client from app settings. Returns None in mock mode."""
     settings = request.app.state.settings
-    if not settings.llm_api_key:
-        return None
-    return LLMClient(
-        api_key=settings.llm_api_key,
-        model=settings.llm_model,
-        base_url=settings.llm_base_url,
-        timeout=settings.llm_timeout,
-    )
+    return create_llm_from_settings(settings)
+
+
+def _get_rag_service(request: Request):
+    """Get RAG service from app state."""
+    return getattr(request.app.state, 'rag_service', None)
 
 
 def _session_out(row, last_msg: str | None = None) -> dict:
@@ -89,7 +92,19 @@ def _parse_args(tc: dict) -> dict:
 def agent_chat(body: ChatRequest, request: Request, user=Depends(current_user)):
     """Send a message to the AI Agent and get a response."""
     db = request.app.state.db
+    with db.transaction() as conn:
+        if body.examId:
+            owned(conn, "exams", body.examId, user["id"])
+        if body.gradingId:
+            job = owned(conn, "grading_jobs", body.gradingId, user["id"])
+            if body.examId and job["exam_id"] != body.examId:
+                fail(400, "判卷记录不属于当前考试")
+            if job["status"] != "succeeded":
+                fail(409, "判卷尚未完成，请稍后再分析")
+            body.examId = job["exam_id"]
     llm = _get_llm(request)
+    rag_service = _get_rag_service(request)
+    memory_manager = MemoryManager(db)
     now = time.time()
 
     # Get or create session
@@ -113,19 +128,36 @@ def agent_chat(body: ChatRequest, request: Request, user=Depends(current_user)):
     # Mock mode: return a canned response without calling LLM
     logger.info("Agent chat: llm=%s, message=%s, examId=%s, gradingId=%s",
                 llm, body.message[:50], body.examId, body.gradingId)
+
     if llm is None:
         result = _mock_agent_turn(db, user["id"], body.message, body.examId, body.gradingId)
     else:
         try:
-            result = run_agent_turn(db, user["id"], session_id, body.message, llm, body.examId, body.gradingId)
+            # Use LangGraph agent
+            from .graph import run_agent
+            result = run_agent(
+                llm=llm,
+                db=db,
+                user_id=user["id"],
+                session_id=session_id,
+                user_message=body.message,
+                memory_manager=memory_manager,
+                rag_service=rag_service,
+                exam_id=body.examId,
+                grading_id=body.gradingId,
+            )
         except Exception:
             logger.exception("Agent turn failed for user %s session %s", user["id"], session_id)
             fail(502, "AI 服务暂时不可用，请稍后重试")
             return  # unreachable, keeps type checker happy
 
-    # Persist messages
-    with db.transaction() as conn:
-        save_turn(conn, session_id, body.message, result)
+    # Persist messages using memory manager
+    memory_manager.save_message(session_id, "user", body.message)
+    memory_manager.save_message(
+        session_id, "assistant", result["content"],
+        tool_calls=result.get("tool_calls_json"),
+    )
+    memory_manager.update_session_timestamp(session_id)
 
     return envelope({
         "sessionId": session_id,
@@ -149,8 +181,8 @@ def _mock_agent_turn(db, user_id: str, message: str, exam_id: str | None = None,
 
     # If grading context is provided, generate a grading analysis response
     if grading_id:
-        from .tools import _query_weak_points
-        result_str = _query_weak_points(db, user_id, exam_id)
+        from .tools import _query_weak_points_impl
+        result_str = _query_weak_points_impl(db, user_id, exam_id)
         tc_id = new_id()
         tool_calls.append({"id": tc_id, "name": "query_weak_points", "arguments": {"exam_id": exam_id or ""}, "result": result_str})
         reply = ("**AI 判卷分析**\n\n"
@@ -163,38 +195,38 @@ def _mock_agent_turn(db, user_id: str, message: str, exam_id: str | None = None,
 
     # Decide which mock tool to "call" based on keywords
     if any(k in msg_lower for k in ['薄弱', '不会', '差', '弱', 'weak']):
-        from .tools import _query_weak_points
-        result_str = _query_weak_points(db, user_id)
+        from .tools import _query_weak_points_impl
+        result_str = _query_weak_points_impl(db, user_id)
         tc_id = new_id()
         tool_calls.append({"id": tc_id, "name": "query_weak_points", "arguments": {}, "result": result_str})
         reply = ("根据你的学习数据，我帮你查询了薄弱知识点。\n\n"
                  "你可以点击上方的工具卡片查看详细数据。\n\n"
                  "建议你针对这些薄弱知识点多做练习，我可以帮你生成专项训练题。")
     elif any(k in msg_lower for k in ['错题', '做错', '错误', 'wrong', 'mistake']):
-        from .tools import _query_wrong_questions
-        result_str = _query_wrong_questions(db, user_id)
+        from .tools import _query_wrong_questions_impl
+        result_str = _query_wrong_questions_impl(db, user_id)
         tc_id = new_id()
         tool_calls.append({"id": tc_id, "name": "query_wrong_questions", "arguments": {}, "result": result_str})
         reply = ("我帮你查询了最近的错题记录。\n\n"
                  "如果你需要我详细讲解某道题的解题过程，可以告诉我题目的内容和课程名称。")
     elif any(k in msg_lower for k in ['分析', '情况', '概览', '总结', 'analyze', 'summary', 'overview']):
-        from .tools import _get_study_summary
-        result_str = _get_study_summary(db, user_id)
+        from .tools import _get_study_summary_impl
+        result_str = _get_study_summary_impl(db, user_id)
         tc_id = new_id()
         tool_calls.append({"id": tc_id, "name": "get_study_summary", "arguments": {}, "result": result_str})
         reply = ("我帮你查看了学习概览。\n\n"
                  "目前你的备考数据如上方工具卡片所示。如果还没有上传过答题图片，"
                  "建议先去「我的备考」创建考试计划并上传作答，这样我才能更准确地分析你的学习情况。")
     elif any(k in msg_lower for k in ['练习', '题目', '出题', '训练', 'practice', 'exercise', 'generate']):
-        from .tools import _generate_practice
-        result_str = _generate_practice(None, knowledge_point="定积分", course="高等数学", difficulty="medium", count=2)
+        from .tools import _generate_practice_impl
+        result_str = _generate_practice_impl(None, knowledge_point="定积分", course="高等数学", difficulty="medium", count=2)
         tc_id = new_id()
         tool_calls.append({"id": tc_id, "name": "generate_practice", "arguments": {"knowledge_point": "定积分", "course": "高等数学"}, "result": result_str})
         reply = ("我为你生成了针对性练习题，点击上方工具卡片查看详情。\n\n"
                  "建议先独立完成，再对照参考答案检查。")
     elif any(k in msg_lower for k in ['讲解', '解释', '怎么解', '怎么做', 'explain', 'how to']):
-        from .tools import _explain_question
-        result_str = _explain_question(None, question_description="求定积分 ∫₀¹ x²dx", course="高等数学")
+        from .tools import _explain_question_impl
+        result_str = _explain_question_impl(None, question_description="求定积分 ∫₀¹ x²dx", course="高等数学")
         tc_id = new_id()
         tool_calls.append({"id": tc_id, "name": "explain_question", "arguments": {"question_description": "求定积分"}, "result": result_str})
         reply = ("我来讲解一下这道题的解题思路。\n\n"
@@ -261,4 +293,76 @@ def delete_session(session_id: str, request: Request, user=Depends(current_user)
             fail(404, "会话不存在")
         conn.execute("DELETE FROM agent_messages WHERE session_id=?", (session_id,))
         conn.execute("DELETE FROM agent_sessions WHERE id=?", (session_id,))
+    return envelope({"deleted": True})
+
+
+# ── Knowledge base management endpoints ──────────────────────────
+
+@router.post("/knowledge/upload")
+async def upload_knowledge(
+    request: Request,
+    file: UploadFile = File(...),
+    title: str = None,
+    user=Depends(current_user),
+):
+    """Upload a document to the knowledge base for RAG."""
+    rag_service = _get_rag_service(request)
+    if not rag_service:
+        fail(503, "RAG 服务未启用")
+
+    # Read file content
+    content = await file.read()
+    text = content.decode("utf-8", errors="ignore")
+
+    if not text.strip():
+        fail(400, "文件内容为空")
+
+    # Generate document ID
+    doc_id = new_id()
+    doc_title = title or file.filename or "Untitled"
+
+    # Index the document
+    try:
+        chunk_count = rag_service.add_document(
+            user_id=user["id"],
+            doc_id=doc_id,
+            content=text,
+            metadata={"title": doc_title, "filename": file.filename},
+        )
+    except Exception:
+        logger.exception("Failed to index document")
+        fail(500, "文档索引失败")
+
+    return envelope({
+        "documentId": doc_id,
+        "title": doc_title,
+        "chunkCount": chunk_count,
+    })
+
+
+@router.get("/knowledge")
+def list_knowledge(request: Request, user=Depends(current_user)):
+    """List knowledge documents for the current user."""
+    rag_service = _get_rag_service(request)
+    if not rag_service:
+        return envelope([])
+
+    # This is a simplified version - in production you'd want a proper
+    # document metadata table in MySQL
+    return envelope([])
+
+
+@router.delete("/knowledge/{doc_id}", status_code=200)
+def delete_knowledge(doc_id: str, request: Request, user=Depends(current_user)):
+    """Delete a knowledge document."""
+    rag_service = _get_rag_service(request)
+    if not rag_service:
+        fail(503, "RAG 服务未启用")
+
+    try:
+        rag_service.delete_document(doc_id)
+    except Exception:
+        logger.exception("Failed to delete document")
+        fail(500, "文档删除失败")
+
     return envelope({"deleted": True})

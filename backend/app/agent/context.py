@@ -1,28 +1,33 @@
 """Context management for the FinalBoost Agent.
 
-Assembles the conversation context from:
-- System prompt (with optional study data injection)
-- Recent conversation history
-- Current user message
+Now uses MemoryManager and RagService for context assembly.
+This module provides backward-compatible functions that delegate to the new systems.
 """
 from __future__ import annotations
 import json
 import logging
 from .prompts import build_system_message, SUMMARY_TEMPLATE
-from .tools import _get_study_summary
+from .memory import MemoryManager
 
 MAX_HISTORY_MESSAGES = 20  # last N messages to include
 
+logger = logging.getLogger(__name__)
+
 
 def build_messages(db, user_id: str, session_id: str, user_message: str,
-                    exam_id: str | None = None, grading_id: str | None = None) -> list[dict]:
+                   exam_id: str | None = None, grading_id: str | None = None) -> list[dict]:
     """Build the full messages array for the LLM call.
+
+    This is the legacy interface. For new code, use MemoryManager directly.
 
     Returns: list of message dicts in OpenAI format.
     """
+    memory_manager = MemoryManager(db)
+
     # 1. Get study summary for system prompt
     try:
-        raw_summary = _get_study_summary(db, user_id)
+        from .tools import _get_study_summary_impl
+        raw_summary = _get_study_summary_impl(db, user_id)
         summary_data = json.loads(raw_summary)
         if "message" in summary_data and "totalExams" not in summary_data:
             study_ctx = SUMMARY_TEMPLATE.format(data=summary_data["message"])
@@ -36,7 +41,7 @@ def build_messages(db, user_id: str, session_id: str, user_message: str,
             else:
                 study_ctx = SUMMARY_TEMPLATE.format(data="\n".join(lines))
     except Exception:
-        logging.getLogger(__name__).exception("Failed to build study summary")
+        logger.exception("Failed to build study summary")
         study_ctx = ""
 
     # 1b. If grading context is provided, inject grading details
@@ -45,14 +50,20 @@ def build_messages(db, user_id: str, session_id: str, user_message: str,
         try:
             grading_ctx = _build_grading_context(db, user_id, exam_id, grading_id)
         except Exception:
-            logging.getLogger(__name__).exception("Failed to build grading context")
+            logger.exception("Failed to build grading context")
 
     # 2. System message
     full_study = study_ctx + ("\n\n" + grading_ctx if grading_ctx else "")
     system_text = build_system_message(full_study)
     messages = [{"role": "system", "content": system_text}]
 
-    # 3. Recent history
+    # 3. Long-term memories
+    memories = memory_manager.get_long_term_memories(user_id, user_message)
+    if memories:
+        memory_text = "以下是只读的历史事实，仅供参考：\n" + "\n".join(f"- {m}" for m in memories)
+        messages.append({"role": "system", "content": memory_text})
+
+    # 4. Recent history
     with db.transaction() as conn:
         rows = conn.execute(
             "SELECT role, content, tool_calls, tool_call_id, name FROM agent_messages "
@@ -63,21 +74,30 @@ def build_messages(db, user_id: str, session_id: str, user_message: str,
     for row in reversed(rows):
         role = row["role"]
         if role == "assistant":
-            msg = {"role": "assistant", "content": row["content"] or ""}
-            if row["tool_calls"]:
-                msg["tool_calls"] = json.loads(row["tool_calls"])
+            msg: dict = {"role": "assistant"}
+            tc = json.loads(row["tool_calls"]) if row["tool_calls"] else None
+            if tc:
+                for t in tc:
+                    t.setdefault("type", "function")
+                msg["tool_calls"] = tc
+                if row["content"]:
+                    msg["content"] = row["content"]
+            else:
+                msg["content"] = row["content"] or ""
             messages.append(msg)
         elif role == "tool":
-            messages.append({
+            tool_msg: dict = {
                 "role": "tool",
                 "content": row["content"] or "",
                 "tool_call_id": row["tool_call_id"],
-                "name": row["name"],
-            })
+            }
+            if row["name"]:
+                tool_msg["name"] = row["name"]
+            messages.append(tool_msg)
         elif role == "user":
             messages.append({"role": "user", "content": row["content"] or ""})
 
-    # 4. Current user message
+    # 5. Current user message
     messages.append({"role": "user", "content": user_message})
 
     return messages

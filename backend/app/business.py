@@ -100,7 +100,7 @@ def create_grading(body:GradingIn,request:Request,user=Depends(current_user)):
             if body.paperId is not None or body.mockExamId is not None: fail(422,"首版尚未接入题库与最终模拟，请直接上传图片")
             for fid in body.fileIds: owned(db,"files",fid,user["id"])
             rid=new_id(); now=time.time()
-            db.execute("INSERT INTO grading_jobs(id,user_id,exam_id,status,scenario,created_at,ready_at,deadline_at) VALUES (?,?,?,'queued',?,?,?,?)",(rid,user["id"],body.examId,settings.mock_scenario,now,now+settings.job_seconds,now+settings.job_timeout))
+            db.execute("INSERT INTO grading_jobs(id,user_id,exam_id,status,scenario,created_at,ready_at,deadline_at,source) VALUES (?,?,?,'queued',?,?,?,?,?)",(rid,user["id"],body.examId,settings.mock_scenario if settings.grading_mode == "mock" else "success",now,now+settings.job_seconds,now+settings.job_timeout,"mock" if settings.grading_mode == "mock" else "provider"))
             db.executemany("INSERT INTO grading_files VALUES (?,?,?)",[(rid,fid,i) for i,fid in enumerate(body.fileIds)])
             return {"gradingId":rid,"status":"queued"}
         response=execute(db,user["id"],request,body.model_dump(),202,create)

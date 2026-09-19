@@ -4,7 +4,7 @@ import { App } from './app/App'
 import './styles/global.css'
 import './styles/home.css'
 import './styles/workspace.css'
-import './styles/agent.css'
 import './styles/aipanel.css'
+import './styles/study.css'
 
 createRoot(document.getElementById('root')!).render(<BrowserRouter><App /></BrowserRouter>)
