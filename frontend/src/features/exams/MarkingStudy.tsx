@@ -203,6 +203,6 @@ export function MarkingStudy({ id }: { id: string }) {
           {!!failed.length && <p className="fine-print" data-testid="marking-failed-note">{failed.length} 页批改失败，其余页面结果不受影响。</p>}
         </>}
       </section>
-    </div><aside className="study-assistant"><AIPanel key={exam.examId} course={exam.course} examId={exam.examId} chatMode={service?.chatMode} /></aside></div>
+    </div><aside className="study-assistant"><AIPanel key={exam.examId} course={exam.course} examId={exam.examId} markingJobIds={done.map(job => job.jobId)} chatMode={service?.chatMode} /></aside></div>
   </div>
 }

@@ -145,6 +145,10 @@ def _get_study_summary_impl(db, user_id: str) -> str:
             "SELECT d.data_json, e.course FROM diagnoses d JOIN exams e ON e.id=d.exam_id WHERE d.user_id=? ORDER BY d.created_at DESC",
             (user_id,),
         ).fetchall()
+        markings = conn.execute(
+            "SELECT mj.id, mj.exam_id, mj.status FROM marking_jobs mj WHERE mj.user_id=? ORDER BY mj.created_at DESC",
+            (user_id,),
+        ).fetchall()
 
     if not exams:
         return json.dumps({"message": "用户还没有创建任何考试，请引导用户先创建考试并上传答题图片"}, ensure_ascii=False)
@@ -152,6 +156,7 @@ def _get_study_summary_impl(db, user_id: str) -> str:
     exam_list = []
     for ex in exams:
         exam_gradings = [g for g in gradings if g["exam_id"] == ex["id"]]
+        exam_markings = [m for m in markings if m["exam_id"] == ex["id"]]
         exam_list.append({
             "examId": ex["id"],
             "course": ex["course"],
@@ -160,12 +165,16 @@ def _get_study_summary_impl(db, user_id: str) -> str:
             "maxScore": ex["max_score"],
             "gradingCount": len(exam_gradings),
             "lastGradingStatus": exam_gradings[0]["status"] if exam_gradings else None,
+            "markingCount": len(exam_markings),
+            "markingSucceededCount": sum(1 for m in exam_markings if m["status"] == "succeeded"),
+            "lastMarkingStatus": exam_markings[0]["status"] if exam_markings else None,
         })
 
     summary = {
         "totalExams": len(exams),
         "totalGradings": len(gradings),
         "totalDiagnoses": len(diagnoses),
+        "totalMarkings": len(markings),
         "exams": exam_list,
     }
     return json.dumps(summary, ensure_ascii=False, default=str)
@@ -209,10 +218,149 @@ def _query_weak_points_impl(db, user_id: str, exam_id: str | None = None) -> str
     }, ensure_ascii=False)
 
 
+# ── Cloud marking (marking_jobs) query helpers ──────────────────
+# A marking result says what the student wrote and whether it was right, but it
+# carries no score basis: the result has totalScore/maxScore of None and every
+# answer's score is None. Nothing below may turn that into a number.
+
+MAX_MARKING_QUESTIONS = 60
+
+VERDICT_LABEL = {True: "正确", False: "错误"}
+
+
+def marking_verdict(value) -> bool | None:
+    """Tri-state judgement — only an explicit bool is a verdict."""
+    return value if isinstance(value, bool) else None
+
+
+def verdict_label(value) -> str:
+    """Render a judgement, keeping an undetermined one explicitly unknown."""
+    return VERDICT_LABEL.get(marking_verdict(value), "未判定")
+
+
+def _marking_job_rows(db, user_id: str, exam_id: str | None = None,
+                      marking_job_ids: list[str] | None = None):
+    """Load the caller's own finished marking jobs, lowest page first.
+
+    Jobs that have not finished, or that belong to another user, are skipped
+    rather than reported as a result.
+    """
+    sql = ("SELECT mj.id, mj.exam_id, mj.page_index, mj.result_json, e.course "
+           "FROM marking_jobs mj JOIN exams e ON e.id = mj.exam_id "
+           "WHERE mj.user_id=? AND mj.status='succeeded' AND mj.result_json IS NOT NULL")
+    params: list = [user_id]
+    if marking_job_ids:
+        sql += " AND mj.id IN (" + ",".join("?" * len(marking_job_ids)) + ")"
+        params.extend(marking_job_ids)
+    if exam_id:
+        sql += " AND mj.exam_id=?"
+        params.append(exam_id)
+    sql += " ORDER BY mj.page_index, mj.created_at"
+    with db.transaction() as conn:
+        return conn.execute(sql, tuple(params)).fetchall()
+
+
+def _collect_marking_questions(result, limit: int = MAX_MARKING_QUESTIONS) -> list[dict]:
+    """Flatten nested marking questions depth-first, capped at ``limit``."""
+    collected: list[dict] = []
+
+    def walk(items, depth: int = 0):
+        if depth > 16:
+            return
+        for item in items or []:
+            if len(collected) >= limit or not isinstance(item, dict):
+                return
+            collected.append(item)
+            walk(item.get("children"), depth + 1)
+
+    if isinstance(result, dict):
+        walk(result.get("questions"))
+    return collected
+
+
+def _marking_question_entries(db, user_id: str, exam_id: str | None = None,
+                              marking_job_ids: list[str] | None = None,
+                              limit: int = MAX_MARKING_QUESTIONS) -> list[dict]:
+    """One entry per (question, answer) pair across the caller's marking jobs.
+
+    Must not be called while holding a ``db.transaction()``.
+    """
+    entries: list[dict] = []
+    for row in _marking_job_rows(db, user_id, exam_id, marking_job_ids):
+        try:
+            result = json.loads(row["result_json"])
+        except (TypeError, ValueError):
+            logger.warning("Marking job %s has unreadable result_json", row["id"])
+            continue
+
+        page = row["page_index"] + 1
+        for item in _collect_marking_questions(result, limit - len(entries)):
+            answers = [a for a in (item.get("answers") or []) if isinstance(a, dict)]
+            stem = item.get("text") or ""
+            # A child question repeats the stem of its parent, so keep the
+            # question's own right answer only when it has one of its own.
+            question_right = item.get("rightAnswer") or ""
+            if not answers:
+                # A stem with no detected answer is still worth passing on.
+                entries.append({
+                    "questionId": f"第{page}页-{item.get('questionId')}",
+                    "questionText": stem, "studentAnswer": "", "rightAnswer": question_right,
+                    "correct": None, "verdict": verdict_label(None), "analysis": "",
+                    "knowledgePoints": [], "errorReason": "", "confidence": None,
+                    "pageIndex": row["page_index"], "markingJobId": row["id"],
+                    "course": row["course"],
+                })
+                continue
+            for answer in answers:
+                entries.append({
+                    "questionId": f"第{page}页-{item.get('questionId')}",
+                    "questionText": stem,
+                    "studentAnswer": answer.get("handwriting") or "",
+                    "rightAnswer": answer.get("rightAnswer") or question_right,
+                    "correct": marking_verdict(answer.get("correct")),
+                    "verdict": verdict_label(answer.get("correct")),
+                    "analysis": answer.get("analysis") or "",
+                    "knowledgePoints": [kp for kp in (answer.get("knowledgePoints") or []) if kp],
+                    "errorReason": answer.get("errorReason") or "",
+                    "confidence": answer.get("confidence"),
+                    "pageIndex": row["page_index"], "markingJobId": row["id"],
+                    "course": row["course"],
+                })
+            if len(entries) >= limit:
+                break
+    return entries[:limit]
+
+
+def _query_marking_questions_impl(db, user_id: str, exam_id: str | None = None,
+                                  marking_job_ids: list[str] | None = None,
+                                  only_wrong: bool = False) -> str:
+    """Question-level detail from the cloud marking results."""
+    entries = _marking_question_entries(db, user_id, exam_id, marking_job_ids)
+    if only_wrong:
+        entries = [e for e in entries if e["correct"] is False]
+    undetermined = sum(1 for e in entries if e["correct"] is None)
+
+    return json.dumps({
+        "questions": entries[:40],
+        "total": len(entries),
+        "undetermined": undetermined,
+        # Marking provides no score basis; an unknown total stays unknown.
+        "scoreAvailable": False,
+        "message": (f"共 {len(entries)} 题，其中 {undetermined} 题未判定正误"
+                    if entries else "暂无批改结果，请先上传试卷并完成批改"),
+    }, ensure_ascii=False)
+
+
 def _query_wrong_questions_impl(
-    db, user_id: str, exam_id: str | None = None, knowledge_point: str | None = None
+    db, user_id: str, exam_id: str | None = None, knowledge_point: str | None = None,
+    marking_job_ids: list[str] | None = None,
 ) -> str:
-    """Original implementation for query_wrong_questions."""
+    """Original implementation for query_wrong_questions.
+
+    Covers both grading sources: the legacy ``grading_jobs`` results and the
+    cloud ``marking_jobs`` results. An answer whose judgement is undetermined is
+    never reported as wrong.
+    """
     with db.transaction() as conn:
         if exam_id:
             rows = conn.execute(
@@ -241,11 +389,36 @@ def _query_wrong_questions_impl(
                     "errorType": q.get("errorType"),
                     "errorReason": q.get("errorReason"),
                     "course": row["course"],
+                    "source": "grading",
                 })
+
+    for entry in _marking_question_entries(db, user_id, exam_id, marking_job_ids):
+        if entry["correct"] is not False:
+            continue
+        if knowledge_point and not any(knowledge_point in kp for kp in entry["knowledgePoints"]):
+            continue
+        wrong_questions.append({
+            "questionId": entry["questionId"],
+            "questionText": entry["questionText"],
+            "studentAnswer": entry["studentAnswer"],
+            "rightAnswer": entry["rightAnswer"],
+            "analysis": entry["analysis"],
+            "score": None,
+            "maxScore": None,
+            "knowledgePoints": entry["knowledgePoints"],
+            "errorType": None,
+            "errorReason": entry["errorReason"],
+            "course": entry["course"],
+            "source": "marking",
+            "pageIndex": entry["pageIndex"],
+            "markingJobId": entry["markingJobId"],
+        })
 
     return json.dumps({
         "wrongQuestions": wrong_questions[:20],
         "total": len(wrong_questions),
+        # Marking results carry no score basis, so no score is ever invented here.
+        "scoreAvailable": False,
         "message": f"找到 {len(wrong_questions)} 道错题" if wrong_questions else "暂无错题记录",
     }, ensure_ascii=False)
 

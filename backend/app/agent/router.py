@@ -102,6 +102,22 @@ def agent_chat(body: ChatRequest, request: Request, user=Depends(current_user)):
             if job["status"] != "succeeded":
                 fail(409, "判卷尚未完成，请稍后再分析")
             body.examId = job["exam_id"]
+        if body.markingJobIds:
+            # Every job must belong to the caller, be finished, and come from the
+            # same exam — a batch is the pages of one paper.
+            marking_ids = list(dict.fromkeys(body.markingJobIds))
+            exam_ids = set()
+            for marking_id in marking_ids:
+                job = owned(conn, "marking_jobs", marking_id, user["id"])
+                if body.examId and job["exam_id"] != body.examId:
+                    fail(400, "批改任务不属于当前考试")
+                if job["status"] != "succeeded":
+                    fail(409, "批改尚未完成，请稍后再分析")
+                exam_ids.add(job["exam_id"])
+            if len(exam_ids) > 1:
+                fail(400, "批改任务必须属于同一场考试")
+            body.markingJobIds = marking_ids
+            body.examId = exam_ids.pop()
     llm = _get_llm(request)
     rag_service = _get_rag_service(request)
     memory_manager = MemoryManager(db)
@@ -126,11 +142,12 @@ def agent_chat(body: ChatRequest, request: Request, user=Depends(current_user)):
             )
 
     # Mock mode: return a canned response without calling LLM
-    logger.info("Agent chat: llm=%s, message=%s, examId=%s, gradingId=%s",
-                llm, body.message[:50], body.examId, body.gradingId)
+    logger.info("Agent chat: llm=%s, message=%s, examId=%s, gradingId=%s, markingJobIds=%s",
+                llm, body.message[:50], body.examId, body.gradingId, body.markingJobIds)
 
     if llm is None:
-        result = _mock_agent_turn(db, user["id"], body.message, body.examId, body.gradingId)
+        result = _mock_agent_turn(db, user["id"], body.message, body.examId,
+                                  body.gradingId, body.markingJobIds)
     else:
         try:
             # Use LangGraph agent
@@ -145,6 +162,7 @@ def agent_chat(body: ChatRequest, request: Request, user=Depends(current_user)):
                 rag_service=rag_service,
                 exam_id=body.examId,
                 grading_id=body.gradingId,
+                marking_job_ids=body.markingJobIds,
             )
         except Exception:
             logger.exception("Agent turn failed for user %s session %s", user["id"], session_id)
@@ -174,10 +192,32 @@ def agent_chat(body: ChatRequest, request: Request, user=Depends(current_user)):
     })
 
 
-def _mock_agent_turn(db, user_id: str, message: str, exam_id: str | None = None, grading_id: str | None = None) -> dict:
+def _mock_agent_turn(db, user_id: str, message: str, exam_id: str | None = None,
+                     grading_id: str | None = None,
+                     marking_job_ids: list[str] | None = None) -> dict:
     """Generate a mock agent response for demo/testing without an LLM key."""
     msg_lower = message.lower()
     tool_calls = []
+
+    # Cloud marking batch: report what the marking results actually contain.
+    # The reply is canned, but the tool card carries the real stored data.
+    if marking_job_ids:
+        from .tools import _query_marking_questions_impl
+        result_str = _query_marking_questions_impl(db, user_id, exam_id, marking_job_ids)
+        try:
+            total = json.loads(result_str).get("total", 0)
+        except json.JSONDecodeError:
+            total = 0
+        tc_id = new_id()
+        tool_calls.append({
+            "id": tc_id, "name": "query_marking_questions",
+            "arguments": {"marking_job_ids": marking_job_ids}, "result": result_str,
+        })
+        reply = (f"**本次批改结果**\n\n我读取了这次上传的批改结果，共 {total} 题，"
+                 "点击上方工具卡片可以查看每道题的题干、你的作答、正误判定和解析。\n\n"
+                 "本次批改没有提供评分依据，因此不会给出分数。"
+                 "你可以继续问我某一道题的讲解或需要复习的知识点。")
+        return {"content": reply, "tool_calls": tool_calls, "tool_calls_json": None}
 
     # If grading context is provided, generate a grading analysis response
     if grading_id:

@@ -8,6 +8,9 @@ class ChatRequest(BaseModel):
     course: str | None = None
     examId: str | None = None
     gradingId: str | None = None
+    # Cloud marking batch: the marking_jobs of the pages shown in the workspace.
+    # Kept separate from gradingId so the legacy grading flow is untouched.
+    markingJobIds: list[str] | None = Field(default=None, max_length=20)
 
 
 class ToolCallOut(BaseModel):

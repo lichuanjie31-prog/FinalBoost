@@ -33,7 +33,7 @@ export interface AgentMessage {
 }
 
 export const agent = {
-  chat: (message: string, sessionId?: string | null, course?: string, context?: { examId?: string; gradingId?: string }) =>
+  chat: (message: string, sessionId?: string | null, course?: string, context?: { examId?: string; gradingId?: string; markingJobIds?: string[] }) =>
     post<ChatResponse>('/agent/chat', { message, sessionId: sessionId || undefined, course, ...context }),
 
   sessions: (signal?: AbortSignal) =>

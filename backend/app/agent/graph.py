@@ -6,11 +6,13 @@ Follows the architecture pattern from wechatBot2's AgentWorkflowRouter.
 from __future__ import annotations
 import json
 import logging
+import uuid
 from typing import Annotated, TypedDict
 from langchain_core.messages import (
     HumanMessage, AIMessage, SystemMessage, ToolMessage, BaseMessage
 )
 from langgraph.graph import StateGraph, END
+from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 from .memory import MemoryManager
 from .rag import RagService
@@ -18,7 +20,8 @@ from .prompts import build_system_message, SUMMARY_TEMPLATE
 from .tools import (
     get_study_summary, query_weak_points, query_wrong_questions,
     explain_question, generate_practice, search_knowledge,
-    execute_tool_with_context, _get_study_summary_impl
+    execute_tool_with_context, _get_study_summary_impl,
+    _marking_question_entries, _marking_job_rows, _query_marking_questions_impl
 )
 
 logger = logging.getLogger(__name__)
@@ -27,11 +30,26 @@ MAX_TOOL_ROUNDS = 3
 
 
 class AgentState(TypedDict):
-    """State for the agent graph."""
-    messages: Annotated[list[BaseMessage], "The conversation messages"]
+    """State for the agent graph.
+
+    ``messages`` MUST use the ``add_messages`` reducer. Without it LangGraph
+    overwrites the channel on every node return, so the second model call would
+    see only the ToolMessage and lose the system prompt, the user question and
+    the assistant message that declared the tool calls.
+    """
+    messages: Annotated[list[BaseMessage], add_messages]
     user_id: str
     session_id: str
     tool_call_count: int
+
+
+SUMMARIZE_HINT = "请根据已有工具结果回答本轮问题，不再调用工具；缺少信息时请明确说明。"
+
+
+def _pending_tool_calls(message: BaseMessage) -> list[dict]:
+    """Return the tool calls an assistant message is still waiting on."""
+    calls = getattr(message, "tool_calls", None)
+    return list(calls) if calls else []
 
 
 def create_agent_graph(llm, tools: list):
@@ -47,48 +65,71 @@ def create_agent_graph(llm, tools: list):
     tool_node = ToolNode(tools)
 
     def should_continue(state: AgentState) -> str:
-        """Decide whether to continue with tool calls or end."""
-        messages = state["messages"]
-        last_message = messages[-1]
+        """Route to tools, to summarize, or end the turn."""
+        last_message = state["messages"][-1]
+        pending = _pending_tool_calls(last_message)
 
-        # Check if we've exceeded max tool rounds
+        # No tool calls pending — the model produced its final answer.
+        if not pending:
+            return END
+
+        # Tool budget exhausted: the model still wants tools, but the protocol
+        # forbids leaving those tool_calls unanswered, so summarize closes them.
         if state.get("tool_call_count", 0) >= MAX_TOOL_ROUNDS:
-            logger.info("Max tool rounds reached, ending agent loop")
-            return "summarize" if getattr(last_message, "tool_calls", None) else END
+            logger.info("Max tool rounds reached, closing out with summarize")
+            return "summarize"
 
-        # If the LLM makes a tool call, route to tools node
-        if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-            return "tools"
-
-        # Otherwise, we're done
-        return END
+        return "tools"
 
     def call_model(state: AgentState) -> dict:
         """Call the LLM with the current messages."""
         messages = state["messages"]
-        tool_count = state.get("tool_call_count", 0)
 
-        logger.info("Agent calling model: %d messages, %d tools used",
-                    len(messages), tool_count)
+        logger.info("Agent calling model: %d messages, %d tool rounds used",
+                    len(messages), state.get("tool_call_count", 0))
 
         response = llm.bind_tools(tools).invoke(messages)
 
+        return {"messages": [response]}
+
+    def run_tools(state: AgentState) -> dict:
+        """Execute the pending tool calls and count the round against the budget."""
+        result = tool_node.invoke(state)
         return {
-            "messages": [response],
-            "tool_call_count": tool_count + 1,
+            "messages": result["messages"],
+            "tool_call_count": state.get("tool_call_count", 0) + 1,
         }
 
     def summarize(state: AgentState) -> dict:
-        messages = state["messages"][:-1]
-        response = llm.invoke(messages + [HumanMessage(content="请根据已有工具结果回答本轮问题，不再调用工具；缺少信息时请明确说明。")])
-        return {"messages": [response]}
+        """Produce a final answer without leaving dangling tool calls.
+
+        When the tool budget runs out the last assistant message may still
+        declare tool calls. The model API rejects an assistant message whose
+        tool_calls are not answered, so we answer them explicitly as "not
+        executed" and keep that on the record instead of dropping the message.
+        """
+        messages = list(state["messages"])
+        synthetic: list[ToolMessage] = []
+
+        for call in _pending_tool_calls(messages[-1]):
+            synthetic.append(ToolMessage(
+                content=json.dumps({
+                    "skipped": True,
+                    "reason": f"工具调用预算已用尽（上限 {MAX_TOOL_ROUNDS} 轮），本次未执行该工具。",
+                }, ensure_ascii=False),
+                tool_call_id=call.get("id") or f"call_{uuid.uuid4().hex[:12]}",
+                name=call.get("name") or "",
+            ))
+
+        response = llm.invoke(messages + synthetic + [HumanMessage(content=SUMMARIZE_HINT)])
+        return {"messages": [*synthetic, response]}
 
     # Build the graph
     workflow = StateGraph(AgentState)
 
     # Add nodes
     workflow.add_node("agent", call_model)
-    workflow.add_node("tools", tool_node)
+    workflow.add_node("tools", run_tools)
     workflow.add_node("summarize", summarize)
     workflow.add_edge("summarize", END)
 
@@ -110,6 +151,76 @@ def create_agent_graph(llm, tools: list):
     return workflow.compile()
 
 
+def _content_to_text(content) -> str:
+    """Flatten LangChain message content to plain text.
+
+    Content is normally a string, but newer providers can return a list of
+    content blocks. Those cannot be stored in a TEXT column or shown in the UI,
+    so collapse them to their text parts.
+    """
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts)
+    return str(content)
+
+
+def validate_message_protocol(messages: list[BaseMessage]) -> list[str]:
+    """Check the tool-calling contract the model APIs enforce.
+
+    Every tool call an assistant message declares must be answered by exactly
+    one ToolMessage, in order, and no ToolMessage may appear without a
+    declaring assistant message. Returns a list of human-readable violations
+    (empty when the transcript is legal).
+    """
+    problems: list[str] = []
+    open_calls: list[str] = []
+    seen_calls: set[str] = set()
+
+    for index, msg in enumerate(messages):
+        if isinstance(msg, AIMessage):
+            if open_calls:
+                problems.append(
+                    f"message[{index}]: assistant message arrived while tool_calls "
+                    f"{open_calls} were still unanswered"
+                )
+                open_calls = []
+            for call in _pending_tool_calls(msg):
+                call_id = call.get("id") or ""
+                if not call_id:
+                    problems.append(f"message[{index}]: tool call without an id")
+                    continue
+                if call_id in seen_calls:
+                    problems.append(f"message[{index}]: duplicate tool_call id {call_id}")
+                seen_calls.add(call_id)
+                open_calls.append(call_id)
+        elif isinstance(msg, ToolMessage):
+            if not msg.tool_call_id:
+                problems.append(f"message[{index}]: ToolMessage without tool_call_id")
+            elif msg.tool_call_id not in open_calls:
+                problems.append(
+                    f"message[{index}]: ToolMessage {msg.tool_call_id} does not answer "
+                    "a pending tool call"
+                )
+            else:
+                open_calls.remove(msg.tool_call_id)
+
+    if open_calls:
+        problems.append(f"transcript ends with unanswered tool_calls {open_calls}")
+
+    return problems
+
+
 def run_agent(
     llm,
     db,
@@ -120,6 +231,7 @@ def run_agent(
     rag_service: RagService = None,
     exam_id: str = None,
     grading_id: str = None,
+    marking_job_ids: list[str] | None = None,
 ) -> dict:
     """Execute one agent turn using LangGraph.
 
@@ -129,11 +241,13 @@ def run_agent(
     # Build messages context
     messages = _build_context(
         db, user_id, session_id, user_message,
-        memory_manager, rag_service, exam_id, grading_id
+        memory_manager, rag_service, exam_id, grading_id, marking_job_ids
     )
 
     # Create agent graph with tools
-    tools = _create_contextual_tools(db, user_id, llm, rag_service)
+    tools = _create_contextual_tools(
+        db, user_id, llm, rag_service, exam_id=exam_id, marking_job_ids=marking_job_ids
+    )
     graph = create_agent_graph(llm, tools)
 
     # Run the graph
@@ -150,29 +264,36 @@ def run_agent(
     final_messages = result["messages"]
     last_ai_message = None
     for msg in reversed(final_messages):
-        if isinstance(msg, AIMessage) and not (hasattr(msg, "tool_calls") and msg.tool_calls):
+        if isinstance(msg, AIMessage) and not _pending_tool_calls(msg):
             last_ai_message = msg
             break
 
+    problems = validate_message_protocol(final_messages)
+    if problems:
+        # Loud, but never fatal: the user still gets an answer this turn.
+        logger.error("Agent transcript violates the tool-calling protocol: %s", problems)
+
     # Collect tool calls for tracking
     tool_calls = []
+    by_id: dict[str, dict] = {}
     for msg in final_messages:
-        if isinstance(msg, AIMessage) and hasattr(msg, "tool_calls") and msg.tool_calls:
+        if isinstance(msg, AIMessage) and _pending_tool_calls(msg):
             for tc in msg.tool_calls:
-                tool_calls.append({
+                entry = {
                     "id": tc.get("id", ""),
                     "name": tc.get("name", ""),
                     "arguments": tc.get("args", {}),
                     "result": "",  # Will be filled from ToolMessage
-                })
+                }
+                tool_calls.append(entry)
+                by_id.setdefault(entry["id"], entry)
         elif isinstance(msg, ToolMessage):
             # Match tool result to the corresponding tool call
-            for tc in tool_calls:
-                if tc["id"] == msg.tool_call_id:
-                    tc["result"] = msg.content
-                    break
+            entry = by_id.get(msg.tool_call_id)
+            if entry is not None and not entry["result"]:
+                entry["result"] = _content_to_text(msg.content)
 
-    content = last_ai_message.content if last_ai_message else ""
+    content = _content_to_text(last_ai_message.content) if last_ai_message else ""
 
     return {
         "content": content,
@@ -200,6 +321,7 @@ def _build_context(
     rag_service: RagService = None,
     exam_id: str = None,
     grading_id: str = None,
+    marking_job_ids: list[str] | None = None,
 ) -> list[BaseMessage]:
     """Build the full message context for the agent."""
     messages = []
@@ -213,8 +335,11 @@ def _build_context(
         else:
             lines = []
             for ex in summary_data.get("exams", []):
-                lines.append(f"- {ex['course']}：目标 {ex['targetScore']}分/{ex['maxScore']}分，"
-                            f"考试日期 {ex['examDate']}，已判卷 {ex['gradingCount']} 次")
+                line = (f"- {ex['course']}：目标 {ex['targetScore']}分/{ex['maxScore']}分，"
+                        f"考试日期 {ex['examDate']}，已判卷 {ex['gradingCount']} 次")
+                if ex.get("markingCount"):
+                    line += f"，云端批改 {ex['markingSucceededCount']}/{ex['markingCount']} 页完成"
+                lines.append(line)
             if not lines:
                 study_ctx = SUMMARY_TEMPLATE.format(data="暂无学习数据。")
             else:
@@ -231,12 +356,20 @@ def _build_context(
         except Exception:
             logger.exception("Failed to build grading context")
 
+    # Add cloud marking context if available
+    marking_ctx = ""
+    if marking_job_ids:
+        try:
+            marking_ctx = _build_marking_context(db, user_id, exam_id, marking_job_ids)
+        except Exception:
+            logger.exception("Failed to build marking context")
+
     if exam_id:
         with db.transaction() as conn:
             current = conn.execute("SELECT course,exam_date,target_score,max_score FROM exams WHERE id=? AND user_id=?", (exam_id, user_id)).fetchone()
         if current:
             study_ctx += "\n当前正在复习的考试：" + json.dumps(dict(current), ensure_ascii=False) + "\n考试ID：" + exam_id
-    full_study = study_ctx + ("\n\n" + grading_ctx if grading_ctx else "")
+    full_study = study_ctx + ("\n\n" + grading_ctx if grading_ctx else "") + ("\n\n" + marking_ctx if marking_ctx else "")
     system_text = build_system_message(full_study)
     messages.append(SystemMessage(content=system_text))
 
@@ -330,12 +463,60 @@ def _build_grading_context(db, user_id: str, exam_id: str, grading_id: str) -> s
     return "\n".join(lines)
 
 
-def _create_contextual_tools(db, user_id: str, llm, rag_service=None):
+def _build_marking_context(
+    db, user_id: str, exam_id: str, marking_job_ids: list[str] | None = None
+) -> str:
+    """Fetch cloud marking results and build context string."""
+    entries = _marking_question_entries(db, user_id, exam_id, marking_job_ids)
+    if not entries:
+        return ""
+
+    lines = ["## 当前批改结果详情（云端批改）"]
+    pages = sorted({e["pageIndex"] for e in entries})
+    lines.append(f"- 已批改页：{'、'.join(f'第{p + 1}页' for p in pages)}")
+    course = next((e["course"] for e in entries if e["course"]), "")
+    if course:
+        lines.append(f"- 课程：{course}")
+    # The marking providers return no score basis, so no score is ever stated.
+    lines.append("- 分数：本次批改未提供评分依据，未计算分数（不要推测或编造分数）")
+
+    current_page = None
+    for entry in entries:
+        if entry["pageIndex"] != current_page:
+            current_page = entry["pageIndex"]
+            lines.append(f"\n### 第 {current_page + 1} 页")
+        lines.append(f"- 题目 {entry['questionId']}")
+        if entry["questionText"]:
+            lines.append(f"  题干：{entry['questionText']}")
+        lines.append(f"  学生作答：{entry['studentAnswer'] or '（未识别到作答）'}")
+        lines.append(f"  判定：{entry['verdict']}")
+        if entry["rightAnswer"]:
+            lines.append(f"  正确答案：{entry['rightAnswer']}")
+        if entry["analysis"]:
+            lines.append(f"  解析：{entry['analysis']}")
+        if entry["knowledgePoints"]:
+            lines.append(f"  知识点：{'、'.join(entry['knowledgePoints'])}")
+        if entry["errorReason"]:
+            lines.append(f"  错误原因：{entry['errorReason']}")
+
+    undetermined = sum(1 for e in entries if e["correct"] is None)
+    if undetermined:
+        lines.append(f"\n注意：其中 {undetermined} 题未能判定正误，请按“未判定”处理，不要当作错题。")
+    lines.append("\n请基于以上批改数据回答，并引用具体题目内容；数据中没有的信息请直接说明不知道。")
+    return "\n".join(lines)
+
+
+def _create_contextual_tools(db, user_id: str, llm, rag_service=None,
+                             exam_id: str = None, marking_job_ids: list[str] | None = None):
     """Create tool functions with database context injected.
 
     Wraps the original tool implementations to inject db/user_id.
     """
     from langchain_core.tools import tool as tool_decorator
+
+    # The chat is scoped to the exam it was opened from, so tools answer about
+    # that exam rather than trusting an id the model may invent.
+    scoped_exam_id = exam_id
 
     @tool_decorator
     def get_study_summary_context() -> str:
@@ -346,16 +527,28 @@ def _create_contextual_tools(db, user_id: str, llm, rag_service=None):
     def query_weak_points_context(exam_id: str = None) -> str:
         """查询用户的薄弱知识点列表。薄弱知识点是指得分率低于80%的知识点。"""
         from .tools import _query_weak_points_impl
-        return _query_weak_points_impl(db, user_id, exam_id)
+        return _query_weak_points_impl(db, user_id, scoped_exam_id or exam_id)
 
     @tool_decorator
     def query_wrong_questions_context(
         exam_id: str = None,
         knowledge_point: str = None,
     ) -> str:
-        """查询用户做错的题目，包括题目信息、得分、错误类型和错误原因"""
+        """查询用户做错的题目，包括题目内容、学生作答、正确答案、错误类型和错误原因。
+        同时覆盖旧版判卷记录和云端批改结果。"""
         from .tools import _query_wrong_questions_impl
-        return _query_wrong_questions_impl(db, user_id, exam_id, knowledge_point)
+        return _query_wrong_questions_impl(
+            db, user_id, scoped_exam_id or exam_id, knowledge_point, marking_job_ids
+        )
+
+    @tool_decorator
+    def query_marking_questions_context(only_wrong: bool = False) -> str:
+        """查询云端批改结果的逐题详情：题干、学生作答、正误判定、正确答案、解析和知识点。
+        判定为“未判定”的题目表示批改未给出明确正误，不要当作错题。
+        仅当用户询问本次上传试卷的题目时使用。"""
+        return _query_marking_questions_impl(
+            db, user_id, scoped_exam_id, marking_job_ids, only_wrong
+        )
 
     @tool_decorator
     def explain_question_context(
@@ -398,7 +591,7 @@ def _create_contextual_tools(db, user_id: str, llm, rag_service=None):
             return "未找到相关知识库内容"
         return "RAG 知识库服务未启用"
 
-    return [
+    available = [
         get_study_summary_context,
         query_weak_points_context,
         query_wrong_questions_context,
@@ -406,3 +599,18 @@ def _create_contextual_tools(db, user_id: str, llm, rag_service=None):
         generate_practice_context,
         search_knowledge_context,
     ]
+
+    # Only offer the marking tool when there is actually marking data to read,
+    # so the model does not spend a round on a guaranteed-empty query.
+    try:
+        has_marking = bool(marking_job_ids) or bool(
+            _marking_job_rows(db, user_id, scoped_exam_id)
+        )
+    except Exception:
+        logger.exception("Failed to check for marking results")
+        has_marking = bool(marking_job_ids)
+
+    if has_marking:
+        available.insert(3, query_marking_questions_context)
+
+    return available
