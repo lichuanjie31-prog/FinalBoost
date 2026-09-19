@@ -217,3 +217,46 @@ status: failed | result: None | usage: None | latencyMs: None
 - 后端测试 `tests/test_training.py` 8/8 通过；前端 E2E `tests/training.spec.ts` 覆盖全流程并通过。
 - OpenAPI 15 → 25 路径；前端类型重新生成并校验一致；`tsc --noEmit` 与 `vite build` 通过。
 - 说明：题目暂用内置种子题（标记 `ai_variant`），待真题库接入后替换；quiz 判分为确定性示例，LLM 接入点已预留。
+
+## 2026-09-19 交付集成（integrate/delivery）
+
+把 master（题库）、feature/training（专项训练）、feature/mock-exam（最终模拟）依次合入
+feature/myself-ai 的批改与 AI 修复之上，每条分支合入后跑最小检查。
+
+### 冲突与陷阱处理
+
+- **main.py**：保留 auth/business/marking/agent/question_banks/training 六个路由，
+  `GradingWorker` 与 `TrainingWorker` 同时启停，`marking_providers` 与 `marking_executor` 原样保留。
+  两个分支的 main.py 都基于旧版本，直接取任一侧都会删掉对方的模块。
+- **common.fail 业务码**：采纳 master 的 `error_response(code=...)` 与 dict detail 异常处理，
+  `str(exc.detail)` 不再把题库错误码变成 Python repr；题库用例断言的 `42210/42211/42212/41310/40913` 全部通过。
+- **grading.py（最终模拟判卷）**：mock-exam 的评分逻辑原本写在已删除的 `_execute_grading` 里，
+  而当前执行路径是「读 → 判 → 写」三段、判卷在写事务之外。已把「优先处理 `mock_exam_id`、
+  按标准答案与作答评分、推进 `mock_exams=graded` 与 `exams=completed`」迁入实际执行路径，
+  判卷阶段不写库，状态推进在写事务内。**反向验证**：临时旁路该分支后，全对/全错都拿到固定示例分数 63.0，
+  证明测试确实钉住了这个退化解法。
+- **前端路由与导航**：采用 master 的嵌套路由 + Outlet 布局，题库、专项训练、最终模拟都成为真实入口；
+  `/app/training` 保留为重定向（mock-exam 的「规划中」占位页已删除，真实训练板块已接入）。
+- **迁移**：未重命名任何文件。4 个 `002_` 前缀文件按完整文件名记账，
+  `003_training_answers.sql` 依赖 `002_training.sql` 建表，前缀顺序是必要的。
+- **requirements.lock**：从 25 行补到 82 行。干净虚拟环境实测时发现 `tzdata` 未声明却是
+  Windows 上 `ZoneInfo("Asia/Shanghai")` 的必需依赖（缺它时 76 项测试失败），已补入。
+- **契约**：业务代码合并完成后才重新导出 OpenAPI 并生成前端类型，`generated.ts` 未手工拼接。
+
+### 无冲突标记但真实存在的集成缺陷（已修）
+
+- `training_worker.py` 用位置参数 `INSERT INTO files VALUES(...)`，撞上题库迁移给 `files`
+  新增的 `sha256`/`purpose` 两列，PDF 导出必然失败（`table files has 9 columns but 7 values were supplied`）。
+  改为显式列名。
+- 我的分支在 `study.css` 的 `<=700px` 里写了 `.workspace-nav{display:none}`，
+  在 `workspace.css` 之后引入因而覆盖了 master 的移动端横向导航，导致手机上侧边栏整体消失
+  （master 的 `question-bank.spec.ts` 断言因此失败）。已移除该移动端覆盖，交回 master 的设计。
+- 最终模拟任务需要与备考工作台的判卷记录区分：`GradingOut` 新增 `mockExamId`，
+  工作台据此过滤，模拟记录留在「最终模拟」板块（该任务 `source` 保持 `mock` 默认值）。
+
+### 验收
+
+- 后端 `121/121` 通过（含新增：Agent 协议 6、批改接线 7、最终模拟 8、迁移升级 2）。
+- 干净虚拟环境 `python -m venv` + `pip install -r requirements.lock` 后：应用可构建（55 路径），
+  `pytest -q` 全部通过（该次运行 120 项；此后又补了 1 项错题集/判卷历史用例）。
+- 前端 `tsc --noEmit` + `vite build` 通过；`verify_contracts.py` 55 路径一致；`check:generated` 通过。

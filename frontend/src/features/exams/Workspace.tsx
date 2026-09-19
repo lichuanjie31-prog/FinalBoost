@@ -8,7 +8,6 @@ import { Brand, ErrorMessage, EmptyState } from '../../components/Shared'
 import { study, type Exam } from '../../api/study'
 
 export function WorkspaceLayout() {
-
   const { user, logout } = useAuth(), navigate = useNavigate(), location = useLocation()
   const [error, setError] = useState(''), [busy, setBusy] = useState(false)
   async function signOut() {
@@ -17,7 +16,9 @@ export function WorkspaceLayout() {
   }
   const navClass = ({ isActive }: { isActive:boolean }) => isActive ? 'nav-selected' : undefined
   const privateSelected = location.pathname === '/app/question-bank' || location.pathname === '/app/question-bank/upload' || location.pathname.startsWith('/app/question-bank/papers/')
-  return <div className="workspace"><header className="workspace-header"><Brand /><div><span className="account-name">{user?.username}{user?.role==='admin' ? ' · 管理员' : ''}</span><button className="text-button" onClick={signOut} disabled={busy}><LogOut size={16} />退出登录</button></div></header><div className="workspace-body"><aside className="workspace-nav"><span className="label-text">学习空间</span><NavLink end className={navClass} to="/app"><BookOpen size={18} />我的备考</NavLink><NavLink end className={privateSelected ? 'nav-selected' : undefined} to="/app/question-bank"><Database size={18} />私人题库</NavLink><NavLink className={navClass} to="/app/question-bank/public"><Globe2 size={18} />公共题库</NavLink>{user?.role==='admin' && <NavLink className={navClass} to="/app/admin/question-bank"><ShieldCheck size={18} />题库管理</NavLink>}<NavLink className={navClass} to="/app/trainings"><Target size={18} />专项训练</NavLink><span className="nav-planned"><ScanLine size={18} />最终模拟<small>规划中</small></span><div className="nav-workflow"><span className="tiny-label">在一场考试中完成</span><p><FileImage size={16} />上传与批改</p><p><Sparkles size={16} />AI 对话与复习</p></div><div className="nav-note">从一份试卷开始，<br />找到复习的下一步。</div><Link className="text-link nav-home" to="/">返回首页<ArrowRight size={14} /></Link></aside><main id="main" tabIndex={-1} className="workspace-main"><ErrorMessage error={error} /><Outlet /></main></div></div>
+  // 最终模拟有两个入口（板块首页与某场考试的模拟卷），两处都要高亮。
+  const mockSelected = location.pathname === '/app/mock' || /^\/app\/exams\/[^/]+\/mock$/.test(location.pathname)
+  return <div className="workspace"><header className="workspace-header"><Brand /><div><span className="account-name">{user?.username}{user?.role==='admin' ? ' · 管理员' : ''}</span><button className="text-button" onClick={signOut} disabled={busy}><LogOut size={16} />退出登录</button></div></header><div className="workspace-body"><aside className="workspace-nav"><span className="label-text">学习空间</span><NavLink end className={navClass} to="/app"><BookOpen size={18} />我的备考</NavLink><NavLink end className={privateSelected ? 'nav-selected' : undefined} to="/app/question-bank"><Database size={18} />私人题库</NavLink><NavLink className={navClass} to="/app/question-bank/public"><Globe2 size={18} />公共题库</NavLink>{user?.role==='admin' && <NavLink className={navClass} to="/app/admin/question-bank"><ShieldCheck size={18} />题库管理</NavLink>}<NavLink className={navClass} to="/app/trainings"><Target size={18} />专项训练</NavLink><NavLink className={mockSelected ? 'nav-selected' : undefined} to="/app/mock"><ScanLine size={18} />最终模拟</NavLink><div className="nav-workflow"><span className="tiny-label">在一场考试中完成</span><p><FileImage size={16} />上传与批改</p><p><Sparkles size={16} />AI 对话与复习</p></div><div className="nav-note">从一份试卷开始，<br />找到复习的下一步。</div><Link className="text-link nav-home" to="/">返回首页<ArrowRight size={14} /></Link></aside><main id="main" tabIndex={-1} className="workspace-main"><ErrorMessage error={error} /><Outlet /></main></div></div>
 }
 
 function openDatePicker(input: HTMLInputElement) {

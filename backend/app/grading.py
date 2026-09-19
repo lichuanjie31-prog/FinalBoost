@@ -228,9 +228,32 @@ class GradingWorker:
                 (row["id"],),
             ).fetchall()
             paths = [self.database.data_dir / "uploads" / f["storage_key"] for f in files]
+            # 最终模拟的题目与作答都已入库，先读出来，供下面无事务的判卷阶段使用。
+            mock_exam = None
+            if row["mock_exam_id"]:
+                mock_exam = db.execute(
+                    "SELECT questions_json,answers_json,status FROM mock_exams WHERE id=?",
+                    (row["mock_exam_id"],),
+                ).fetchone()
 
         error, result = None, None
-        if row["source"] == "mock" and row["scenario"] in ("unreadable", "provider_error"):
+        advance_mock_exam = False
+        if row["mock_exam_id"]:
+            # 最终模拟优先于其它分支：按标准答案与学生的真实作答评分，
+            # 绝不落到固定示例分数（MockGrader.result()）。
+            # 这一段不做任何数据库写入——判卷阶段一律在写事务之外。
+            if mock_exam is None:
+                error = {"code": 40401, "message": "最终模拟记录不存在，请重新开始模拟考试"}
+            elif mock_exam["status"] != "submitted":
+                error = {"code": 40901, "message": "最终模拟尚未提交或已判卷，请重新开始模拟考试"}
+            else:
+                try:
+                    result = self._grade_mock_exam(mock_exam)
+                    advance_mock_exam = True
+                except Exception:
+                    logging.getLogger(__name__).exception("Mock exam grading failed for job %s", row["id"])
+                    error = {"code": 50201, "message": "最终模拟判卷失败，请重新提交"}
+        elif row["source"] == "mock" and row["scenario"] in ("unreadable", "provider_error"):
             code = 42201 if row["scenario"] == "unreadable" else 50201
             error = {"code": code, "message": "模拟场景：图片无法识别，请更换清晰图片" if code == 42201 else "模拟场景：判卷服务暂时不可用，请稍后重试"}
         else:
@@ -248,10 +271,97 @@ class GradingWorker:
                 error = {"code": 50201, "message": "批改模型调用失败，请确认模型支持图片并检查服务配置后重试"}
         if time.time() >= row["deadline_at"]:
             error = {"code": 50401, "message": "判卷超时，请重新提交"}
+            advance_mock_exam = False
+        # 判卷与模型调用已结束，这里才重新进入写事务。
         with self.database.transaction() as db:
+            if advance_mock_exam:
+                # 判卷成功才推进状态：mock_exams → graded，exam.stage → completed。
+                db.execute(
+                    "UPDATE mock_exams SET status='graded',graded_at=? WHERE id=?",
+                    (time.time(), row["mock_exam_id"]),
+                )
+                db.execute(
+                    "UPDATE exams SET stage='completed' WHERE id=? AND stage!='completed'",
+                    (row["exam_id"],),
+                )
             db.execute(
                 "UPDATE grading_jobs SET status=?,result_json=?,error_json=? WHERE id=? AND status='running'",
                 ("failed" if error else "succeeded", None if error else json.dumps(result, ensure_ascii=False),
                  json.dumps(error, ensure_ascii=False) if error else None, row["id"]),
             )
         return 0.01
+
+    def _grade_mock_exam(self, mock_row) -> dict:
+        """对比 mock_exam 的标准答案和学生作答，生成 GradingResult。
+
+        评分规则：
+        - 选择题（options 非空）：精确匹配选项 label 得满分，否则 0
+        - 简答题（options 为空）：精确匹配得满分；包含匹配得 80%；其他得 0
+        """
+        questions = json.loads(mock_row["questions_json"])
+        answers = json.loads(mock_row["answers_json"])
+        answer_lookup = {a["questionId"]: a.get("answer", "").strip() for a in answers}
+
+        graded = []
+        total_score = 0.0
+        max_total = 0.0
+        for q in questions:
+            qid = q["questionId"]
+            student = answer_lookup.get(qid, "")
+            correct = q["correctAnswer"].strip()
+            max_score = float(q["maxScore"])
+            max_total += max_score
+            is_choice = bool(q.get("options"))
+
+            if not student:
+                # 未作答
+                score = 0.0
+                error_type = "missing_answer"
+                error_reason = "未作答"
+                correct_flag = False
+            elif is_choice:
+                if student.upper() == correct.upper():
+                    score = max_score
+                    error_type = None
+                    error_reason = None
+                    correct_flag = True
+                else:
+                    score = 0.0
+                    error_type = "concept_error"
+                    error_reason = f"正确答案 {correct}"
+                    correct_flag = False
+            else:
+                # 简答题：完全匹配 > 包含匹配 > 其他
+                if student == correct:
+                    score = max_score
+                    error_type = None
+                    error_reason = None
+                    correct_flag = True
+                elif correct and (correct in student or student in correct):
+                    score = round(max_score * 0.8, 1)
+                    error_type = "method_error"
+                    error_reason = "答案部分匹配"
+                    correct_flag = False
+                else:
+                    score = 0.0
+                    error_type = "concept_error"
+                    error_reason = "答案不匹配"
+                    correct_flag = False
+
+            total_score += score
+            graded.append({
+                "questionId": qid,
+                "score": round(score, 1),
+                "maxScore": max_score,
+                "correct": correct_flag,
+                "knowledgePointIds": q.get("knowledgePointIds", []),
+                "knowledgePoints": q.get("knowledgePoints", []),
+                "errorType": error_type,
+                "errorReason": error_reason,
+            })
+
+        return {
+            "totalScore": round(total_score, 1),
+            "maxScore": round(max_total, 1),
+            "questions": graded,
+        }

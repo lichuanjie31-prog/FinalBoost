@@ -2194,6 +2194,723 @@
         }
       }
     },
+    "/api/v1/exams/{exam_id}/mock": {
+      "post": {
+        "tags": [
+          "study"
+        ],
+        "summary": "Create Mock Exam",
+        "description": "创建/获取最终模拟卷。\n\n- 已有 ready/submitted 的卷 → 直接返回它（幂等，继续作答）\n- 已有 graded 的卷且 force=False → 返回最近一份已判卷的（查看成绩场景）\n- force=True → 无视已有卷，强制开一套新卷（\"再来一套\"）",
+        "operationId": "create_mock_exam_api_v1_exams__exam_id__mock_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exam_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Exam Id"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Force"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MockExamOut_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/exams/{exam_id}/mock/{mock_exam_id}": {
+      "get": {
+        "tags": [
+          "study"
+        ],
+        "summary": "Get Mock Exam",
+        "description": "查询最终模拟卷（含题目和学生作答，但不含标准答案）。\n\n如果已判卷，还会把关联的 grading_id 一起返回，方便前端跳转判卷详情。",
+        "operationId": "get_mock_exam_api_v1_exams__exam_id__mock__mock_exam_id__get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exam_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Exam Id"
+            }
+          },
+          {
+            "name": "mock_exam_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mock Exam Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MockExamOut_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/exams/{exam_id}/mock/{mock_exam_id}/submit": {
+      "post": {
+        "tags": [
+          "study"
+        ],
+        "summary": "Submit Mock Exam",
+        "description": "学生提交最终模拟作答。\n\n校验：\n- 考试归属正确\n- 模拟卷存在、归属正确、状态=ready（不能重复提交）\n- 所有作答 questionId 必须在这套卷子里\n提交后状态变为 submitted，前端可以接着调 POST /grading 触发判卷。",
+        "operationId": "submit_mock_exam_api_v1_exams__exam_id__mock__mock_exam_id__submit_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exam_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Exam Id"
+            }
+          },
+          {
+            "name": "mock_exam_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Mock Exam Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MockExamSubmitIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MockExamOut_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/exams/{exam_id}/mock-history": {
+      "get": {
+        "tags": [
+          "study"
+        ],
+        "summary": "List Mock History",
+        "description": "本场考试的全部最终模拟记录（判卷历史），按创建时间倒序。\n\n已判卷的记录附带最近一次成功判卷的 totalScore。",
+        "operationId": "list_mock_history_api_v1_exams__exam_id__mock_history_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "exam_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Exam Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_list_MockHistoryItem__"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/mock/mistakes": {
+      "get": {
+        "tags": [
+          "study"
+        ],
+        "summary": "List Mock Mistakes",
+        "description": "用户全部最终模拟错题集：把所有已成功判卷的 mock 里 score<maxScore 的题目抽出来。\n\n按判卷时间倒序，方便学生从最近一次的薄弱点开始复盘。\n同一道题（questionId 相同）多次答错只保留最近一次，避免错题集被重复刷屏。",
+        "operationId": "list_mock_mistakes_api_v1_mock_mistakes_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_list_MockMistakeItem__"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Unsupported Media Type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/v1/marking/readiness": {
       "get": {
         "tags": [
@@ -8559,6 +9276,33 @@
         ],
         "title": "Envelope[MarkingReadiness]"
       },
+      "Envelope_MockExamOut_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code",
+            "default": 0
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MockExamOut"
+          },
+          "requestId": {
+            "type": "string",
+            "title": "Requestid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "requestId"
+        ],
+        "title": "Envelope[MockExamOut]"
+      },
       "Envelope_NoneType_": {
         "properties": {
           "code": {
@@ -9046,6 +9790,68 @@
         ],
         "title": "Envelope[UserOut]"
       },
+      "Envelope_list_MockHistoryItem__": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code",
+            "default": 0
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/MockHistoryItem"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "requestId": {
+            "type": "string",
+            "title": "Requestid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "requestId"
+        ],
+        "title": "Envelope[list[MockHistoryItem]]"
+      },
+      "Envelope_list_MockMistakeItem__": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code",
+            "default": 0
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/MockMistakeItem"
+            },
+            "type": "array",
+            "title": "Data"
+          },
+          "requestId": {
+            "type": "string",
+            "title": "Requestid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "requestId"
+        ],
+        "title": "Envelope[list[MockMistakeItem]]"
+      },
       "ErrorEnvelope": {
         "properties": {
           "code": {
@@ -9325,7 +10131,6 @@
             },
             "type": "array",
             "maxItems": 10,
-            "minItems": 1,
             "title": "Fileids"
           },
           "paperId": {
@@ -9354,8 +10159,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "examId",
-          "fileIds"
+          "examId"
         ],
         "title": "GradingIn"
       },
@@ -9406,6 +10210,17 @@
               "provider"
             ],
             "title": "Source"
+          },
+          "mockExamId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mockexamid"
           }
         },
         "type": "object",
@@ -10053,6 +10868,360 @@
           "notice"
         ],
         "title": "MarkingResultOut"
+      },
+      "MockExamOut": {
+        "properties": {
+          "mockExamId": {
+            "type": "string",
+            "title": "Mockexamid"
+          },
+          "examId": {
+            "type": "string",
+            "title": "Examid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "submitted",
+              "graded"
+            ],
+            "title": "Status"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/MockQuestionPublic"
+            },
+            "type": "array",
+            "title": "Questions"
+          },
+          "maxScore": {
+            "type": "number",
+            "title": "Maxscore"
+          },
+          "createdAt": {
+            "type": "number",
+            "title": "Createdat"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          },
+          "gradedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradedat"
+          },
+          "gradingId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradingid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mockExamId",
+          "examId",
+          "status",
+          "questions",
+          "maxScore",
+          "createdAt"
+        ],
+        "title": "MockExamOut"
+      },
+      "MockExamSubmitIn": {
+        "properties": {
+          "answers": {
+            "items": {
+              "$ref": "#/components/schemas/MockStudentAnswer"
+            },
+            "type": "array",
+            "title": "Answers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "answers"
+        ],
+        "title": "MockExamSubmitIn",
+        "description": "学生提交作答。"
+      },
+      "MockHistoryItem": {
+        "properties": {
+          "mockExamId": {
+            "type": "string",
+            "title": "Mockexamid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "submitted",
+              "graded"
+            ],
+            "title": "Status"
+          },
+          "totalScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalscore"
+          },
+          "maxScore": {
+            "type": "number",
+            "title": "Maxscore"
+          },
+          "createdAt": {
+            "type": "number",
+            "title": "Createdat"
+          },
+          "submittedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submittedat"
+          },
+          "gradedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gradedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mockExamId",
+          "status",
+          "maxScore",
+          "createdAt"
+        ],
+        "title": "MockHistoryItem",
+        "description": "判卷历史列表项：一次最终模拟的简要结果（不含题目明细）。"
+      },
+      "MockMistakeItem": {
+        "properties": {
+          "mockExamId": {
+            "type": "string",
+            "title": "Mockexamid"
+          },
+          "examId": {
+            "type": "string",
+            "title": "Examid"
+          },
+          "course": {
+            "type": "string",
+            "title": "Course"
+          },
+          "questionId": {
+            "type": "string",
+            "title": "Questionid"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "knowledgePoints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledgepoints"
+          },
+          "userAnswer": {
+            "type": "string",
+            "title": "Useranswer"
+          },
+          "correctAnswer": {
+            "type": "string",
+            "title": "Correctanswer"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "maxScore": {
+            "type": "number",
+            "title": "Maxscore"
+          },
+          "errorType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errortype"
+          },
+          "errorReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errorreason"
+          },
+          "gradedAt": {
+            "type": "number",
+            "title": "Gradedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mockExamId",
+          "examId",
+          "course",
+          "questionId",
+          "prompt",
+          "knowledgePoints",
+          "userAnswer",
+          "correctAnswer",
+          "score",
+          "maxScore",
+          "gradedAt"
+        ],
+        "title": "MockMistakeItem",
+        "description": "错题集单项：一道学生在最终模拟中失分的题目。"
+      },
+      "MockOption": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "text"
+        ],
+        "title": "MockOption"
+      },
+      "MockQuestionPublic": {
+        "properties": {
+          "questionId": {
+            "type": "string",
+            "title": "Questionid"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/MockOption"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "maxScore": {
+            "type": "number",
+            "title": "Maxscore"
+          },
+          "knowledgePointIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledgepointids"
+          },
+          "knowledgePoints": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Knowledgepoints"
+          }
+        },
+        "type": "object",
+        "required": [
+          "questionId",
+          "prompt",
+          "maxScore",
+          "knowledgePointIds",
+          "knowledgePoints"
+        ],
+        "title": "MockQuestionPublic",
+        "description": "暴露给前端的题目（不含标准答案）。"
+      },
+      "MockStudentAnswer": {
+        "properties": {
+          "questionId": {
+            "type": "string",
+            "title": "Questionid"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "answeredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answeredat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "questionId",
+          "answer"
+        ],
+        "title": "MockStudentAnswer"
       },
       "OutlineItem": {
         "properties": {

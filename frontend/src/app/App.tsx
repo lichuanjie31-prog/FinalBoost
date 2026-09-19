@@ -13,6 +13,9 @@ import { AdminPapersPage } from '../features/question-bank/AdminPapersPage'
 import { AdminUploadPage } from '../features/question-bank/AdminUploadPage'
 import { Trainings } from '../features/training/Trainings'
 import { TrainingDetail } from '../features/training/TrainingDetail'
+import { MockExam } from '../features/exams/MockExam'
+import { MockHub } from '../features/exams/MockHub'
+
 
 
 export function Protected({ children }: { children?: ReactNode }) {
@@ -26,6 +29,6 @@ function AdminRoute() {
   return user?.role === 'admin' ? <Outlet /> : <Navigate to="/app/question-bank" replace />
 }
 export function App() {
-  return <AuthProvider><a className="skip-link" href="#main">跳到主要内容</a><Routes><Route path="/" element={<Home />} /><Route path="/login" element={<AuthPage key="login" />} /><Route path="/register" element={<AuthPage key="register" register />} /><Route element={<Protected />}><Route path="/app" element={<WorkspaceLayout />}><Route index element={<Workspace />} /><Route path="exams/:id" element={<ExamDetail />} /><Route path="ai" element={<Navigate to="/app" replace />} /><Route path="trainings" element={<Trainings />} /><Route path="trainings/:id" element={<TrainingDetail />} /><Route path="question-bank" element={<PrivatePapersPage />} /><Route path="question-bank/upload" element={<UploadPaperPage />} /><Route path="question-bank/public" element={<PublicPapersPage />} /><Route path="question-bank/papers/:id" element={<PrivatePaperDetailPage />} /><Route element={<AdminRoute />}><Route path="admin/question-bank" element={<AdminPapersPage />} /><Route path="admin/question-bank/upload" element={<AdminUploadPage />} /></Route></Route></Route><Route path="*" element={<Navigate to="/" replace />} /></Routes></AuthProvider>
+  return <AuthProvider><a className="skip-link" href="#main">跳到主要内容</a><Routes><Route path="/" element={<Home />} /><Route path="/login" element={<AuthPage key="login" />} /><Route path="/register" element={<AuthPage key="register" register />} /><Route element={<Protected />}><Route path="/app" element={<WorkspaceLayout />}><Route index element={<Workspace />} /><Route path="exams/:id" element={<ExamDetail />} /><Route path="exams/:id/mock" element={<MockExam />} /><Route path="mock" element={<MockHub />} /><Route path="ai" element={<Navigate to="/app" replace />} /><Route path="trainings" element={<Trainings />} /><Route path="trainings/:id" element={<TrainingDetail />} /><Route path="training" element={<Navigate to="/app/trainings" replace />} /><Route path="question-bank" element={<PrivatePapersPage />} /><Route path="question-bank/upload" element={<UploadPaperPage />} /><Route path="question-bank/public" element={<PublicPapersPage />} /><Route path="question-bank/papers/:id" element={<PrivatePaperDetailPage />} /><Route element={<AdminRoute />}><Route path="admin/question-bank" element={<AdminPapersPage />} /><Route path="admin/question-bank/upload" element={<AdminUploadPage />} /></Route></Route></Route><Route path="*" element={<Navigate to="/" replace />} /></Routes></AuthProvider>
 
 }

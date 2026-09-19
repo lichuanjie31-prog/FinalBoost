@@ -181,4 +181,165 @@
   .empty-state{padding:40px 0}
   .empty-state h2{font-size:20px}
   .create-dialog{padding:22px}
+  .phase-track{grid-template-columns:repeat(5,minmax(0,1fr));font-size:10px;gap:6px}
+  .phase{padding:10px 6px}
+  .phase-dot{width:8px;height:8px}
 }
+
+/* ─────────── 最终模拟（mock exam）样式 ─────────── */
+.phase-track{list-style:none;padding:0;margin:0 0 24px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+.phase{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-radius:var(--radius);background:var(--surface-warm);border:1px solid var(--border);font-size:12px;color:var(--ink-muted);font-family:var(--font-mono);letter-spacing:.5px;position:relative}
+.phase-dot{width:10px;height:10px;border-radius:50%;background:var(--border);transition:background .2s,box-shadow .2s}
+.phase.is-reached{background:white;color:var(--ink-soft);border-color:#d4d4d8}
+.phase.is-reached .phase-dot{background:var(--ink)}
+.phase.is-current{background:white;color:var(--ink);border-color:var(--ink);font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,.08)}
+.phase.is-current .phase-dot{background:var(--ink);box-shadow:0 0 0 4px rgba(24,24,27,.12)}
+
+.mock-questions-panel{gap:18px}
+.mock-question,.mock-readonly-item{border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin:0;background:white;overflow:hidden;scroll-margin-top:24px;transition:border-color .15s,box-shadow .15s}
+.mock-question:hover,.mock-readonly-item:hover{border-color:var(--ink-soft)}
+.mock-question.is-answered,.mock-readonly-item.is-answered{border-color:var(--ink-soft)}
+.mock-question-legend{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.mock-question-legend strong{font-size:14px;color:var(--ink)}
+.mock-question-legend .muted{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted);margin-left:auto}
+.mock-question-flag{display:inline-block;padding:2px 8px;font-size:11px;font-family:var(--font-mono);background:var(--ink);color:#fff;border-radius:99px}
+.mock-prompt{font-size:14px;line-height:1.7;color:var(--ink);margin:8px 0 14px;white-space:pre-wrap}
+.mock-options{display:flex;flex-direction:column;gap:8px}
+.mock-option{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;cursor:pointer;transition:all .15s;font-size:13px;line-height:1.5}
+.mock-option:hover{border-color:var(--ink-soft);background:var(--surface-warm)}
+.mock-option.is-checked{border-color:var(--ink);background:#f4f4f5}
+.mock-option input[type=radio]{margin:0}
+.mock-option .opt-label{font-weight:600;font-family:var(--font-mono);font-size:12px;color:var(--ink-soft);min-width:18px}
+.mock-options.readonly{display:flex;flex-direction:column;gap:4px;list-style:none;padding:0;margin:0;font-size:12px;color:var(--ink-soft)}
+.mock-options.readonly li{padding:6px 10px;border-radius:6px}
+.mock-options.readonly li.is-checked{background:var(--ink);color:#fff}
+.mock-question textarea{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:14px;resize:vertical}
+.mock-question textarea:focus{outline:none;border-color:var(--ink)}
+.mock-readonly-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:14px}
+.mock-readonly-item>div{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.mock-readonly-item .muted{font-size:11px;font-family:var(--font-mono)}
+.mock-text-answer{background:var(--surface-warm);padding:10px 12px;border-radius:6px;font-size:13px;white-space:pre-wrap;margin:8px 0 0}
+
+.mock-side-panel{display:flex;flex-direction:column;gap:16px;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow-y:auto;scrollbar-width:thin}
+.mock-side-panel::-webkit-scrollbar{width:6px}
+.mock-side-panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px}
+.status-block{display:flex;flex-direction:column;align-items:center;gap:10px;padding:20px 16px;text-align:center}
+.status-block p{margin:0;font-size:13px;color:var(--ink-soft);line-height:1.6}
+.status-block .job-score{font-family:var(--font-mono);font-size:38px;font-weight:600;color:var(--ink);letter-spacing:-.02em;line-height:1}
+.status-block .job-score small{font-size:14px;color:var(--ink-muted);font-weight:400;margin-left:6px}
+.status-block .job-status-badge{display:inline-block;padding:4px 10px;border-radius:99px;background:var(--surface-warm);font-size:11px;font-family:var(--font-mono)}
+.side-meta{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--ink-muted);padding:10px 14px;border-top:1px solid var(--border);font-family:var(--font-mono)}
+
+/* 判卷完成后：右栏错题列表 */
+.mock-all-correct{margin:0;font-size:13px;color:#047857;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:8px;padding:10px 14px}
+.mock-wrong-list{display:flex;flex-direction:column;gap:10px;width:100%}
+.mock-wrong-title{font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);text-align:left}
+.mock-wrong-item{display:flex;flex-direction:column;gap:8px;align-items:stretch;text-align:left;border:1px solid #fecaca;background:#fff;border-radius:8px;padding:12px 14px;cursor:pointer;font:inherit;color:inherit}
+.mock-wrong-item:hover{background:#fef5f5}
+.mock-wrong-top{display:flex;justify-content:space-between;align-items:center}
+.mock-wrong-top strong{font-size:13px}
+.mock-wrong-score{font-family:var(--font-mono);font-size:15px;font-weight:600;color:#b91c1c}
+.mock-wrong-score small{font-size:11px;color:var(--ink-muted);font-weight:400}
+.mock-wrong-kps{display:flex;flex-wrap:wrap;gap:6px}
+.kp-pill{font-size:10px;font-family:var(--font-mono);padding:2px 8px;border-radius:99px;background:var(--surface-warm);color:var(--ink-soft)}
+.mock-wrong-prompt{margin:0;font-size:12px;color:var(--ink-soft);line-height:1.5}
+.mock-wrong-answer{margin:0;font-size:12px;color:#b91c1c;background:#fef2f2;border-radius:6px;padding:6px 8px}
+.mock-wrong-reason{margin:0;font-size:11px;color:var(--ink-soft);font-family:var(--font-mono)}
+.form-row{display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid var(--border-light)}
+.form-row .muted{font-size:12px}
+.is-disabled{opacity:.5;cursor:not-allowed}
+
+.mock-questions-panel .form-stack{display:flex;flex-direction:column;gap:18px}
+
+/* 答题卡（最终模拟作答阶段） */
+.answer-card{padding:16px 18px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
+.answer-card-head{display:flex;justify-content:space-between;align-items:center}
+.answer-card-head h3{font-size:13px;font-weight:600;color:var(--ink);margin:0}
+.answer-card-head .muted{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted)}
+.answer-card-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;list-style:none;padding:0;margin:0}
+.answer-cell{aspect-ratio:1/1;border:1px solid var(--border);border-radius:8px;background:white;font-family:var(--font-mono);font-size:13px;font-weight:600;color:var(--ink-soft);cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;padding:0}
+.answer-cell:hover{border-color:var(--ink);color:var(--ink);background:var(--surface-warm)}
+.answer-cell.is-answered{background:var(--ink);color:#fff;border-color:var(--ink)}
+.answer-cell.is-answered:hover{background:#27272a}
+.answer-cell.is-empty:hover{color:var(--ink)}
+.answer-card .fine-print{font-size:11px;color:var(--ink-muted);font-family:var(--font-mono);margin-top:2px}
+
+/* 题目跳转锚点高亮 */
+.mock-question:target{outline:2px solid var(--ink);outline-offset:4px;scroll-margin-top:24px}
+
+/* 判卷历史 + 错题集：右栏入口按钮 + 各自弹层 */
+.mock-side-link{justify-content:center;width:100%;padding:10px 0;border-top:1px solid var(--border-light);border-radius:0;display:flex;align-items:center;gap:6px}
+.mock-side-link+.mock-side-link{border-top:0}
+.mock-history-overlay{position:fixed;inset:0;z-index:60;background:rgba(24,24,27,.4);display:flex;align-items:center;justify-content:center;padding:20px;animation:mock-history-fade .15s ease-out}
+@keyframes mock-history-fade{from{opacity:0}to{opacity:1}}
+.mock-history-modal{width:min(560px,100%);max-height:min(80vh,640px);overflow-y:auto;background:white;border-radius:var(--radius);box-shadow:0 20px 50px rgba(0,0,0,.25);padding:20px 22px;animation:mock-history-rise .2s cubic-bezier(.34,1.3,.64,1)}
+@keyframes mock-history-rise{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+.mock-history-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.mock-history-head h2{display:inline-flex;align-items:center;gap:8px;font-size:16px;margin:0;letter-spacing:-.02em}
+.mock-history-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.mock-history-item{display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:8px;background:white;flex-wrap:wrap}
+.mock-history-item.is-graded{border-color:var(--ink-soft)}
+.mock-history-no{font-size:12px;font-family:var(--font-mono);color:var(--ink-soft);min-width:52px}
+.mock-history-score{font-family:var(--font-mono);font-size:18px;font-weight:600;letter-spacing:-.02em;line-height:1;color:var(--ink)}
+.mock-history-score small{font-size:11px;color:var(--ink-muted);font-weight:400;margin-left:3px}
+.mock-history-unfinished{font-size:12px;color:var(--ink-muted);font-family:var(--font-mono)}
+.mock-history-flag{margin-left:auto;font-size:11px;font-family:var(--font-mono);padding:3px 8px;border-radius:99px}
+.mock-history-flag.is-pass{background:#ecfdf5;color:#047857}
+.mock-history-flag.is-gap{background:#fef3c7;color:#92400e}
+.mock-history-time{font-size:11px;color:var(--ink-muted);font-family:var(--font-mono)}
+
+/* 错题集：弹层（按考试分组） */
+.mock-mistakes-overlay{position:fixed;inset:0;z-index:60;background:rgba(24,24,27,.4);display:flex;align-items:center;justify-content:center;padding:20px;animation:mock-history-fade .15s ease-out}
+.mock-mistakes-modal{width:min(720px,100%);max-height:min(85vh,760px);overflow-y:auto;background:white;border-radius:var(--radius);box-shadow:0 20px 50px rgba(0,0,0,.25);padding:20px 22px;animation:mock-history-rise .2s cubic-bezier(.34,1.3,.64,1)}
+.mock-mistakes-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.mock-mistakes-head h2{display:inline-flex;align-items:center;gap:8px;font-size:16px;margin:0;letter-spacing:-.02em}
+.mock-mistakes-summary{padding:10px 14px;background:var(--surface-warm);border:1px solid var(--border-light);border-radius:8px;font-size:13px;color:var(--ink-soft);margin-bottom:14px}
+.mock-mistakes-summary strong{color:var(--ink);font-family:var(--font-mono);font-weight:600}
+.mock-mistakes-groups{display:flex;flex-direction:column;gap:18px}
+.mock-mistakes-group{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:white}
+.mock-mistakes-group-head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--surface-warm);border-bottom:1px solid var(--border-light)}
+.mock-mistakes-group-head h3{margin:0;font-size:14px;letter-spacing:-.01em}
+.mock-mistakes-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column}
+.mock-mistake-item{padding:14px 16px;border-top:1px solid var(--border-light);display:flex;flex-direction:column;gap:8px}
+.mock-mistake-item:first-child{border-top:0}
+.mock-mistake-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mock-mistake-score{font-family:var(--font-mono);font-size:18px;font-weight:600;color:var(--ink);line-height:1}
+.mock-mistake-score small{font-size:11px;color:var(--ink-muted);font-weight:400;margin-left:3px}
+.mock-mistake-kp{font-size:11px;font-family:var(--font-mono);color:var(--ink-soft);background:var(--surface-warm);padding:2px 8px;border-radius:99px}
+.mock-mistake-time{margin-left:auto;font-size:11px;color:var(--ink-muted);font-family:var(--font-mono)}
+.mock-mistake-prompt{margin:0;font-size:14px;line-height:1.6;color:var(--ink)}
+.mock-mistake-answers{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+@media (max-width:560px){.mock-mistake-answers{grid-template-columns:1fr}}
+.mock-mistake-answer{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:8px;border:1px solid var(--border-light)}
+.mock-mistake-answer.is-wrong{background:#fef2f2;border-color:#fecaca}
+.mock-mistake-answer.is-correct{background:#ecfdf5;border-color:#a7f3d0}
+.mock-mistake-label{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted);letter-spacing:.04em}
+.mock-mistake-answer.is-wrong .mock-mistake-label{color:#b91c1c}
+.mock-mistake-answer.is-correct .mock-mistake-label{color:#047857}
+.mock-mistake-text{font-size:13px;color:var(--ink);line-height:1.5;word-break:break-word}
+.mock-mistake-reason{margin:0;font-size:12px;color:var(--ink-soft);font-family:var(--font-mono)}
+
+/* 最终模拟板块页（/app/mock）：按考试聚合的卡片网格 */
+.mock-hub-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;margin-top:8px}
+.mock-hub-card{display:flex;flex-direction:column;gap:10px;padding:20px 22px;background:white;border:1px solid var(--border);border-radius:var(--radius);transition:border-color .15s,box-shadow .15s}
+.mock-hub-card:hover{border-color:var(--ink-soft);box-shadow:0 4px 14px rgba(0,0,0,.05)}
+.mock-hub-card h2{font-size:18px;margin:0}
+.mock-hub-card .card-top{display:flex;justify-content:space-between;align-items:center}
+.mock-hub-card .muted{font-size:12px;color:var(--ink-muted);display:inline-flex;align-items:center;gap:6px}
+.mock-hub-hint{font-size:12px;color:var(--ink-soft);margin:0;line-height:1.5}
+.mock-hub-status{font-size:11px;font-family:var(--font-mono);padding:3px 8px;border-radius:99px;background:var(--surface-warm);color:var(--ink-soft)}
+.mock-hub-status.is-graded{background:var(--ink);color:#fff}
+.mock-hub-status.is-ready{background:#ecfdf5;color:#047857}
+.mock-hub-status.is-submitted{background:#fef3c7;color:#92400e}
+.mock-hub-bottom{display:flex;flex-direction:column;align-items:stretch;gap:10px;margin-top:auto;padding-top:10px;border-top:1px solid var(--border-light)}
+.mock-hub-bottom .muted{white-space:nowrap}
+.mock-hub-bottom .button{width:100%;padding:11px 20px;font-size:13px;gap:8px}
+.mock-hub-bottom .muted strong{color:var(--ink);font-family:var(--font-mono)}
+.mock-hub-score{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border-light);border-radius:8px;background:var(--surface-warm);flex-wrap:wrap}
+.mock-hub-score .muted{font-size:11px;font-family:var(--font-mono);color:var(--ink-muted);margin:0}
+.mock-hub-score strong{font-size:22px;font-weight:600;font-family:var(--font-mono);letter-spacing:-.02em;line-height:1;color:var(--ink)}
+.mock-hub-score strong small{font-size:12px;color:var(--ink-muted);font-weight:400;margin-left:4px}
+.mock-hub-score.is-target{background:#ecfdf5;border-color:#a7f3d0}
+.mock-hub-score.is-target strong{color:#047857}
+.mock-hub-score-flag{margin-left:auto;font-size:11px;font-family:var(--font-mono);padding:3px 8px;border-radius:99px;background:var(--ink);color:#fff}
+.mock-hub-score-flag.is-gap{background:#fef3c7;color:#92400e}

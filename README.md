@@ -119,14 +119,17 @@ npm run dev
 全部已验证可执行（2026-09-19）：
 
 ```bash
-# 后端测试（75/75 通过：47 项既有 + 28 项千问批改）
+# 后端测试（120/120 通过）
 cd backend && .venv/Scripts/python.exe -m pytest -q
 
 # 前端构建与类型检查
 cd frontend && npm run build
 
-# 浏览器测试 - 既有 9 项（首页 4 + 工作台与流程 4 + 失败场景 1）
-cd frontend && npm run test:e2e && npm run test:failure
+# 浏览器测试 - 主回归（首页 4 + 工作台与 AI 对话 1 + 完整流程 3 + 题库 1 + 专项训练 1 + 三板块入口 1）
+cd frontend && npm run test:e2e
+
+# 浏览器测试 - 失败场景（1/1 通过）
+cd frontend && npm run test:failure
 
 # 浏览器测试 - 批改（真实本地后端，仅替换外部 Provider 边界）
 cd frontend && npm run test:marking                    # 千问 2 项：按页展示 / 失败到恢复
@@ -134,25 +137,28 @@ cd frontend && npm run test:marking-tencent            # 腾讯云 1 项：切�
 cd frontend && npm run test:marking-unconfigured       # 腾讯云未配置 1 项
 cd frontend && npm run test:marking-unconfigured-qwen  # 千问未配置 1 项
 
-# 浏览器测试 - 完整业务流程（3/3 通过）
-cd frontend && npx playwright test tests/workflow.spec.ts
-
-# 浏览器测试 - 失败场景（1/1 通过）
-cd frontend && npx playwright test tests/failure.spec.ts --config playwright.failure.config.ts
-
-# 专项训练 - 后端测试（8/8 通过）
-cd backend && .venv/Scripts/python.exe -m pytest tests/test_training.py -v
-
-# 专项训练 - 浏览器全流程（1/1 通过）
-cd frontend && npx playwright test tests/training.spec.ts
-
-# 合约验证（SHA256 指纹 + OpenAPI 一致性）
-
+# 合约验证（SHA256 指纹 + OpenAPI 一致性，55 路径）
 backend/.venv/Scripts/python.exe scripts/verify_contracts.py
 
 # 生成类型验证
 cd frontend && npm run check:generated
 ```
+
+### 模块接入状态（2026-09-19 交付集成）
+
+| 模块 | 后端路由 | 前端入口 | 状态 |
+|------|----------|----------|------|
+| 账号与鉴权 | `/auth/*` | `/login`、`/register` | 已接入 |
+| 备考工作台 | `/exams`、`/grading`、`/diagnoses` | `/app`、`/app/exams/:id` | 已接入 |
+| 试卷批改（腾讯云 / 千问） | `/marking/*` | `/app/exams/:id`（批改启用时） | 已接入 |
+| AI 备考助手 | `/agent/*` | 工作台右侧助手 | 已接入 |
+| 题库 | `/papers`、`/subjects`、`/admin/papers`、`/public/papers` | `/app/question-bank*` | 已接入 |
+| 专项训练 | `/trainings/*` | `/app/trainings`、`/app/trainings/:id` | 已接入 |
+| 最终模拟 | `/exams/{id}/mock*`、`/mock/mistakes` | `/app/mock`、`/app/exams/:id/mock` | 已接入 |
+
+后端 120 项、合约 55 路径、干净虚拟环境重装后全部通过；浏览器用例见上方命令。
+最终模拟的判卷依据学生真实作答按标准答案评分（选择题精确匹配、简答题包含匹配 80%），
+不提供评分依据时不给分数，也绝不回退到固定示例分数。
 
 ### 批改验收（2026-09-19）
 

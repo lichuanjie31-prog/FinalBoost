@@ -100,7 +100,9 @@ function ExamStudy({ id }: { id: string }) {
   }
   if (loading) return <div className="empty-state" role="status">正在读取考试记录…</div>
   if (!exam) return <div className="panel"><ErrorMessage error={error} /><button className="button button-quiet" onClick={() => setReload(v=>v+1)}>重新加载</button><Link to="/app" className="text-link">返回我的备考</Link></div>
-  const active = jobs.find(j => j.gradingId === selectedId) || jobs[jobs.length - 1]
+  // 最终模拟的判卷记录归「最终模拟」板块，这里只列本场考试的试卷批改。
+  const paperJobs = jobs.filter(j => !j.mockExamId)
+  const active = paperJobs.find(j => j.gradingId === selectedId) || paperJobs[paperJobs.length - 1]
   const mock = service?.gradingMode === 'mock'
   const resultMock = active?.source === 'mock'
   const completed = active?.status === 'succeeded'
@@ -122,15 +124,15 @@ function ExamStudy({ id }: { id: string }) {
         <button className="button full-width" disabled={busy || !files.length || !service} onClick={submit}>{busy ? '正在提交…' : mock ? '上传并开始模拟判卷' : '上传并开始批改'}<ArrowRight size={17} /></button>
         <p className="fine-print">{mock ? '当前使用固定示例评分，不识别图片内容。连接图像模型后可启用真实批改。' : '模型将读取试卷图片并生成逐题评分。请核对识别内容和评分依据。'}</p>
       </section>
-      <section className="panel jobs-panel"><div className="panel-title"><div><span className="eyebrow">FEEDBACK</span><h2>批改结果</h2></div><span className="tag tag-muted">{jobs.length} 次提交</span></div>
+      <section className="panel jobs-panel"><div className="panel-title"><div><span className="eyebrow">FEEDBACK</span><h2>批改结果</h2></div><span className="tag tag-muted">{paperJobs.length} 次提交</span></div>
         {!active ? <div className="results-empty"><FileImage size={32} /><h3>你的第一份分析，从这里开始</h3><p>提交试卷后，在这里查看分数、失分原因和薄弱知识点。</p></div> : <>
-          <label className="record-select">判卷记录<select value={active.gradingId} onChange={e => setSelectedId(e.target.value)}>{[...jobs].reverse().map((job,index) => <option key={job.gradingId} value={job.gradingId}>第 {jobs.length-index} 次提交 · {job.status === 'succeeded' ? '已完成' : job.status === 'failed' ? '失败' : '处理中'}</option>)}</select></label>
+          <label className="record-select">判卷记录<select value={active.gradingId} onChange={e => setSelectedId(e.target.value)}>{[...paperJobs].reverse().map((job,index) => <option key={job.gradingId} value={job.gradingId}>第 {paperJobs.length-index} 次提交 · {job.status === 'succeeded' ? '已完成' : job.status === 'failed' ? '失败' : '处理中'}</option>)}</select></label>
           <article className="job-item"><div className="job-title"><strong>{resultMock ? '示例批改' : 'AI 批改'}</strong><span className={'job-status ' + active.status}>{completed ? '判卷完成' : active.status === 'failed' ? '判卷失败' : active.status === 'running' ? '正在判卷' : '排队中'}</span></div>
             {(active.status === 'queued' || active.status === 'running') && <p role="status"><RefreshCw size={16} className="spin" />{active.status === 'queued' ? '任务已排队' : '正在判卷'}，可安全刷新页面</p>}
             {active.status === 'failed' && <><ErrorMessage error={active.error?.message || '批改失败'} /><p className="fine-print">请检查图片清晰度和服务配置，然后重新上传。</p></>}
             {active.result && <><div className="score-overview"><div className="job-score">{active.result.totalScore ?? '待评估'}<small> / {active.result.maxScore} 分</small></div><span>{active.result.questions.length} 道题已分析</span></div><QuestionScores result={active.result} /><button className="text-button" disabled={workingDiagnosis !== null} onClick={() => diagnose(active.gradingId)}>{workingDiagnosis ? '正在生成…' : resultMock ? '查看示例诊断' : '查看诊断报告'}<ArrowRight size={16} /></button><p className="fine-print">右侧助手已关联这次批改，可继续追问失分原因。</p></>}
           </article>
-        </>}<ErrorMessage error={diagnosisError} />
+        </>}<p className="fine-print">最终模拟的判卷记录请到侧边栏「最终模拟」板块查看。</p><ErrorMessage error={diagnosisError} />
       </section>
       {diagnoses.map(diagnosis => <section className="panel diagnosis-panel" key={diagnosis.diagnosisId}><div className="panel-title"><h2>{diagnosis.source === 'mock' ? '示例诊断报告' : '诊断报告'}</h2><span className="tag">{diagnosis.source === 'mock' ? '模拟数据' : 'AI 分析'}</span></div><div className="diagnosis-summary"><div><span className="muted">按考试满分换算的估分</span><div className="report-score"><strong data-testid="estimated-score">{diagnosis.estimatedScore}</strong><span> / {exam.maxScore}</span></div></div><div><strong>优先复习</strong>{diagnosis.weakPoints.length === 0 ? <p>暂无薄弱点记录</p> : <ul className="weak-point-list">{diagnosis.weakPoints.map(p => <li key={p.knowledgePointId}><span>{p.name}</span><button className="text-button" disabled={startingTraining !== ''} onClick={() => startTraining(p.knowledgePointId)}>{startingTraining === p.knowledgePointId ? '正在创建…' : '开始专项训练'}<Target size={14} /></button></li>)}</ul>}</div></div><div className="outline-list">{diagnosis.outline.map(point => <div className="outline-item" key={point.knowledgePointId}><div><strong>{point.knowledgePoint}</strong><span>掌握度尚未评估</span></div><div className="outline-progress"><div className="progress-track"><span style={{width: point.scoreRate + '%'}} /></div><span>得分率 {point.scoreRate}%</span></div></div>)}</div><ErrorMessage error={trainingError} /></section>)}
     </div><aside className="study-assistant"><AIPanel key={exam.examId} course={exam.course} examId={exam.examId} gradingId={completed ? active.gradingId : undefined} chatMode={service?.chatMode} /></aside></div>

@@ -19,6 +19,53 @@ export type ExportAccepted = components['schemas']['ExportAccepted']
 export type ExportStatus = components['schemas']['ExportOut']
 export type ExportInput = components['schemas']['ExportIn']
 
+// 最终模拟（mock exam）类型 —— 手写包装，等后端 /openapi.json 导出后再迁到 generated.ts
+export type MockQuestion = {
+  questionId: string
+  prompt: string
+  options?: { label: string; text: string }[] | null
+  maxScore: number
+  knowledgePointIds: string[]
+  knowledgePoints: string[]
+  studentAnswer?: string
+}
+export type MockExam = {
+  mockExamId: string
+  examId: string
+  status: 'ready' | 'submitted' | 'graded'
+  questions: MockQuestion[]
+  maxScore: number
+  createdAt: number
+  submittedAt?: number | null
+  gradedAt?: number | null
+  gradingId?: string | null
+}
+export type MockStudentAnswer = { questionId: string; answer: string }
+export type MockHistoryItem = {
+  mockExamId: string
+  status: 'ready' | 'submitted' | 'graded'
+  totalScore: number | null
+  maxScore: number
+  createdAt: number
+  submittedAt?: number | null
+  gradedAt?: number | null
+}
+export type MockMistakeItem = {
+  mockExamId: string
+  examId: string
+  course: string
+  questionId: string
+  prompt: string
+  knowledgePoints: string[]
+  userAnswer: string
+  correctAnswer: string
+  score: number
+  maxScore: number
+  errorType?: string | null
+  errorReason?: string | null
+  gradedAt: number
+}
+
 async function allPages<T>(path: string, signal?: AbortSignal): Promise<T[]> {
   const items: T[] = []
   let cursor: string | null = null
@@ -41,6 +88,21 @@ export const study = {
     const body = new FormData(); body.append('file', file)
     return request<UploadedFile>('/files/images', { method:'POST', body, headers:{ 'Idempotency-Key':key } })
   },
+  // ─────────── 最终模拟（mock exam）── API 文档 v1.0 第 15 节 ───────────
+  // 创建/获取最终模拟卷（force=true 强制开新卷，用于"再来一套"）
+  createMock: (examId: string, key: string, force = false) => post<MockExam>(`/exams/${examId}/mock${force ? '?force=true' : ''}`, {}, key),
+  // 查询最终模拟卷（含题目 + 学生作答，不含标准答案）
+  getMock: (examId: string, mockExamId: string, signal?: AbortSignal) => request<MockExam>(`/exams/${examId}/mock/${mockExamId}`, { signal }),
+  // 学生提交作答（ready → submitted）
+  submitMock: (examId: string, mockExamId: string, answers: MockStudentAnswer[], key: string) =>
+    post<MockExam>(`/exams/${examId}/mock/${mockExamId}/submit`, { answers }, key),
+  // 触发判卷（已 submitted 后调）
+  gradeMock: (examId: string, mockExamId: string, key: string) =>
+    post<components['schemas']['GradingAccepted']>('/grading', { examId, mockExamId }, key),
+  // 判卷历史：本场考试全部最终模拟记录（新→旧）
+  mockHistory: (examId: string, signal?: AbortSignal) => request<MockHistoryItem[]>(`/exams/${examId}/mock-history`, { signal }),
+  // 错题集：用户全部已判卷错题（按判卷时间倒序）
+  mockMistakes: (signal?: AbortSignal) => request<MockMistakeItem[]>('/mock/mistakes', { signal }),
 }
 export const training = {
   list: (signal?: AbortSignal) => allPages<Training>('/trainings', signal),

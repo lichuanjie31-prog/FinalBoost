@@ -260,6 +260,123 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/exams/{exam_id}/mock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Mock Exam
+         * @description 创建/获取最终模拟卷。
+         *
+         *     - 已有 ready/submitted 的卷 → 直接返回它（幂等，继续作答）
+         *     - 已有 graded 的卷且 force=False → 返回最近一份已判卷的（查看成绩场景）
+         *     - force=True → 无视已有卷，强制开一套新卷（"再来一套"）
+         */
+        post: operations["create_mock_exam_api_v1_exams__exam_id__mock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exams/{exam_id}/mock/{mock_exam_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Mock Exam
+         * @description 查询最终模拟卷（含题目和学生作答，但不含标准答案）。
+         *
+         *     如果已判卷，还会把关联的 grading_id 一起返回，方便前端跳转判卷详情。
+         */
+        get: operations["get_mock_exam_api_v1_exams__exam_id__mock__mock_exam_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exams/{exam_id}/mock/{mock_exam_id}/submit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit Mock Exam
+         * @description 学生提交最终模拟作答。
+         *
+         *     校验：
+         *     - 考试归属正确
+         *     - 模拟卷存在、归属正确、状态=ready（不能重复提交）
+         *     - 所有作答 questionId 必须在这套卷子里
+         *     提交后状态变为 submitted，前端可以接着调 POST /grading 触发判卷。
+         */
+        post: operations["submit_mock_exam_api_v1_exams__exam_id__mock__mock_exam_id__submit_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/exams/{exam_id}/mock-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Mock History
+         * @description 本场考试的全部最终模拟记录（判卷历史），按创建时间倒序。
+         *
+         *     已判卷的记录附带最近一次成功判卷的 totalScore。
+         */
+        get: operations["list_mock_history_api_v1_exams__exam_id__mock_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/mock/mistakes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Mock Mistakes
+         * @description 用户全部最终模拟错题集：把所有已成功判卷的 mock 里 score<maxScore 的题目抽出来。
+         *
+         *     按判卷时间倒序，方便学生从最近一次的薄弱点开始复盘。
+         *     同一道题（questionId 相同）多次答错只保留最近一次，避免错题集被重复刷屏。
+         */
+        get: operations["list_mock_mistakes_api_v1_mock_mistakes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/marking/readiness": {
         parameters: {
             query?: never;
@@ -1228,6 +1345,22 @@ export interface components {
             /** Requestid */
             requestId: string;
         };
+        /** Envelope[MockExamOut] */
+        Envelope_MockExamOut_: {
+            /**
+             * Code
+             * @default 0
+             */
+            code: number;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+            data: components["schemas"]["MockExamOut"];
+            /** Requestid */
+            requestId: string;
+        };
         /** Envelope[NoneType] */
         Envelope_NoneType_: {
             /**
@@ -1517,6 +1650,40 @@ export interface components {
             /** Requestid */
             requestId: string;
         };
+        /** Envelope[list[MockHistoryItem]] */
+        Envelope_list_MockHistoryItem__: {
+            /**
+             * Code
+             * @default 0
+             */
+            code: number;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+            /** Data */
+            data: components["schemas"]["MockHistoryItem"][];
+            /** Requestid */
+            requestId: string;
+        };
+        /** Envelope[list[MockMistakeItem]] */
+        Envelope_list_MockMistakeItem__: {
+            /**
+             * Code
+             * @default 0
+             */
+            code: number;
+            /**
+             * Message
+             * @default success
+             */
+            message: string;
+            /** Data */
+            data: components["schemas"]["MockMistakeItem"][];
+            /** Requestid */
+            requestId: string;
+        };
         /** ErrorEnvelope */
         ErrorEnvelope: {
             /** Code */
@@ -1639,7 +1806,7 @@ export interface components {
             /** Examid */
             examId: string;
             /** Fileids */
-            fileIds: string[];
+            fileIds?: string[];
             /** Paperid */
             paperId?: string | null;
             /** Mockexamid */
@@ -1663,6 +1830,8 @@ export interface components {
              * @enum {string}
              */
             source: "mock" | "provider";
+            /** Mockexamid */
+            mockExamId?: string | null;
         };
         /** GradingResult */
         GradingResult: {
@@ -1886,6 +2055,127 @@ export interface components {
             scoreStatus: "unavailable";
             /** Notice */
             notice: string;
+        };
+        /** MockExamOut */
+        MockExamOut: {
+            /** Mockexamid */
+            mockExamId: string;
+            /** Examid */
+            examId: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "submitted" | "graded";
+            /** Questions */
+            questions: components["schemas"]["MockQuestionPublic"][];
+            /** Maxscore */
+            maxScore: number;
+            /** Createdat */
+            createdAt: number;
+            /** Submittedat */
+            submittedAt?: number | null;
+            /** Gradedat */
+            gradedAt?: number | null;
+            /** Gradingid */
+            gradingId?: string | null;
+        };
+        /**
+         * MockExamSubmitIn
+         * @description 学生提交作答。
+         */
+        MockExamSubmitIn: {
+            /** Answers */
+            answers: components["schemas"]["MockStudentAnswer"][];
+        };
+        /**
+         * MockHistoryItem
+         * @description 判卷历史列表项：一次最终模拟的简要结果（不含题目明细）。
+         */
+        MockHistoryItem: {
+            /** Mockexamid */
+            mockExamId: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "submitted" | "graded";
+            /** Totalscore */
+            totalScore?: number | null;
+            /** Maxscore */
+            maxScore: number;
+            /** Createdat */
+            createdAt: number;
+            /** Submittedat */
+            submittedAt?: number | null;
+            /** Gradedat */
+            gradedAt?: number | null;
+        };
+        /**
+         * MockMistakeItem
+         * @description 错题集单项：一道学生在最终模拟中失分的题目。
+         */
+        MockMistakeItem: {
+            /** Mockexamid */
+            mockExamId: string;
+            /** Examid */
+            examId: string;
+            /** Course */
+            course: string;
+            /** Questionid */
+            questionId: string;
+            /** Prompt */
+            prompt: string;
+            /** Knowledgepoints */
+            knowledgePoints: string[];
+            /** Useranswer */
+            userAnswer: string;
+            /** Correctanswer */
+            correctAnswer: string;
+            /** Score */
+            score: number;
+            /** Maxscore */
+            maxScore: number;
+            /** Errortype */
+            errorType?: string | null;
+            /** Errorreason */
+            errorReason?: string | null;
+            /** Gradedat */
+            gradedAt: number;
+        };
+        /** MockOption */
+        MockOption: {
+            /** Label */
+            label: string;
+            /** Text */
+            text: string;
+        };
+        /**
+         * MockQuestionPublic
+         * @description 暴露给前端的题目（不含标准答案）。
+         */
+        MockQuestionPublic: {
+            /** Questionid */
+            questionId: string;
+            /** Prompt */
+            prompt: string;
+            /** Options */
+            options?: components["schemas"]["MockOption"][] | null;
+            /** Maxscore */
+            maxScore: number;
+            /** Knowledgepointids */
+            knowledgePointIds: string[];
+            /** Knowledgepoints */
+            knowledgePoints: string[];
+        };
+        /** MockStudentAnswer */
+        MockStudentAnswer: {
+            /** Questionid */
+            questionId: string;
+            /** Answer */
+            answer: string;
+            /** Answeredat */
+            answeredAt?: number | null;
         };
         /** OutlineItem */
         OutlineItem: {
@@ -4017,6 +4307,572 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Envelope_Page_DiagnosisOut__"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    create_mock_exam_api_v1_exams__exam_id__mock_post: {
+        parameters: {
+            query?: {
+                force?: boolean;
+            };
+            header?: never;
+            path: {
+                exam_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MockExamOut_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    get_mock_exam_api_v1_exams__exam_id__mock__mock_exam_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exam_id: string;
+                mock_exam_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MockExamOut_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    submit_mock_exam_api_v1_exams__exam_id__mock__mock_exam_id__submit_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exam_id: string;
+                mock_exam_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MockExamSubmitIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_MockExamOut_"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_mock_history_api_v1_exams__exam_id__mock_history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                exam_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_list_MockHistoryItem__"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Too Many Requests */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorEnvelope"];
+                };
+            };
+        };
+    };
+    list_mock_mistakes_api_v1_mock_mistakes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Envelope_list_MockMistakeItem__"];
                 };
             };
             /** @description Bad Request */
