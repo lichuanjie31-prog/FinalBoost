@@ -3,6 +3,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 
+def real_secret(value):
+    """Treat documented placeholder values as unset, so readiness never lies.
+
+    `.env.example` ships values like `your-api-key`; without this a fresh clone
+    would report marking as configured and then fail with a 401 at call time.
+    """
+    value = (value or "").strip()
+    if value.lower().startswith(("your-", "your_", "example", "changeme")) or value.startswith("<"):
+        return ""
+    return value
+
+
 @dataclass
 class Settings:
     data_dir: Path = field(
@@ -15,12 +27,28 @@ class Settings:
     mock_scenario: str = field(default_factory=lambda: os.getenv("MOCK_SCENARIO", "success"))
     job_seconds: float = field(default_factory=lambda: float(os.getenv("JOB_SECONDS", "3")))
     job_timeout: float = field(default_factory=lambda: float(os.getenv("JOB_TIMEOUT", "120")))
-    # Tencent Cloud question-marking Agent. Credentials are read from the backend
-    # environment only; they are never exposed through the API or the browser.
-    #   disabled -> marking endpoints report "not configured"
-    #   fixture  -> offline acceptance: a local stub replaces the Tencent SDK boundary
-    #   tencent  -> real SDK calls, requires TENCENTCLOUD_SECRET_ID/SECRET_KEY
+    # Exam marking. Credentials are read from the backend environment only; they are
+    # never exposed through the API, the browser, the database or the logs.
+    #   MARKING_MODE      disabled | fixture | live
+    #                     (legacy: a bare `qwen`/`tencent` still selects that provider live)
+    #   MARKING_PROVIDER  qwen | tencent
     marking_mode: str = field(default_factory=lambda: os.getenv("MARKING_MODE", "disabled"))
+    marking_provider: str = field(default_factory=lambda: os.getenv("MARKING_PROVIDER", "qwen"))
+    # Qwen VL via DashScope's OpenAI-compatible endpoint. Reuses the project's
+    # existing Alibaba credentials rather than inventing a second config system.
+    dashscope_api_key: str = field(
+        default_factory=lambda: real_secret(os.getenv("DASHSCOPE_API_KEY", "") or os.getenv("EMBEDDING_API_KEY", ""))
+    )
+    dashscope_base_url: str = field(
+        default_factory=lambda: (
+            os.getenv("DASHSCOPE_BASE_URL", "") or os.getenv("EMBEDDING_BASE_URL", "")
+            or "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        ).rstrip("/")
+    )
+    qwen_marking_model: str = field(default_factory=lambda: os.getenv("QWEN_MARKING_MODEL", "qwen3-vl-plus"))
+    qwen_marking_timeout: float = field(
+        default_factory=lambda: float(os.getenv("QWEN_MARKING_TIMEOUT", "120"))
+    )
     tencent_secret_id: str = field(default_factory=lambda: os.getenv("TENCENTCLOUD_SECRET_ID", ""))
     tencent_secret_key: str = field(default_factory=lambda: os.getenv("TENCENTCLOUD_SECRET_KEY", ""))
     tencent_token: str = field(default_factory=lambda: os.getenv("TENCENTCLOUD_TOKEN", ""))
@@ -96,9 +124,12 @@ class Settings:
             raise RuntimeError("Invalid MOCK_SCENARIO")
         if min(self.job_seconds, self.job_timeout, self.access_seconds, self.refresh_seconds) <= 0:
             raise RuntimeError("Durations must be positive")
-        if self.marking_mode not in {"disabled", "fixture", "tencent"}:
-            raise RuntimeError("MARKING_MODE must be one of disabled, fixture, tencent")
-        if min(self.marking_submit_interval, self.marking_poll_interval, self.marking_request_timeout) <= 0:
+        if self.marking_mode not in {"disabled", "fixture", "live", "qwen", "tencent"}:
+            raise RuntimeError("MARKING_MODE must be one of disabled, fixture, live, qwen, tencent")
+        if self.marking_provider not in {"qwen", "tencent"}:
+            raise RuntimeError("MARKING_PROVIDER must be qwen or tencent")
+        if min(self.marking_submit_interval, self.marking_poll_interval, self.marking_request_timeout,
+               self.qwen_marking_timeout) <= 0:
             raise RuntimeError("Marking durations must be positive")
 
     @property
@@ -109,37 +140,45 @@ class Settings:
     def has_tencent_credentials(self):
         return bool(self.tencent_secret_id and self.tencent_secret_key)
 
+    @property
+    def has_dashscope_credentials(self):
+        return bool(self.dashscope_api_key)
+
+    def resolve_marking(self):
+        """Return (mode, provider); mode is disabled | fixture | live.
+
+        A bare `MARKING_MODE=qwen|tencent` is the legacy spelling and selects that
+        provider running live, so existing deployments keep working unchanged.
+        """
+        if self.marking_mode in ("qwen", "tencent"):
+            return "live", self.marking_mode
+        if self.marking_mode == "fixture":
+            return "fixture", self.marking_provider
+        return "disabled", self.marking_provider
+
     def marking_readiness(self):
         """Describe marking availability without ever echoing credential material."""
-        if self.marking_mode == "disabled":
-            return {
-                "mode": "disabled",
-                "configured": False,
-                "reason": "MarkingDisabled",
-                "message": "腾讯云批改尚未启用；本机为演示模式，不识别图片内容。",
-            }
-        if self.marking_mode == "fixture":
-            return {
-                "mode": "fixture",
-                "configured": True,
-                "reason": None,
-                "region": self.tencent_region,
-                "submitIntervalSeconds": self.marking_submit_interval,
-                "message": "离线验收模式：腾讯云边界由本地桩替代，未发生真实调用。",
-            }
+        mode, provider = self.resolve_marking()
+        base = {"mode": mode, "provider": provider,
+                "model": self.qwen_marking_model if provider == "qwen" else None,
+                "region": self.tencent_region if provider == "tencent" else None}
+        if mode == "disabled":
+            return {**base, "configured": False, "reason": "MarkingDisabled",
+                    "message": "试卷批改尚未启用；本机为演示模式，不识别图片内容。"}
+        if mode == "fixture":
+            return {**base, "configured": True, "reason": None,
+                    "submitIntervalSeconds": self.marking_submit_interval,
+                    "message": f"离线验收模式：{provider} 的外部边界由本地桩替代，未发生真实调用。"}
+        if provider == "qwen":
+            if not self.has_dashscope_credentials:
+                return {**base, "configured": False, "reason": "NotConfigured",
+                        "message": "千问视觉批改尚未配置，请在后端设置 DASHSCOPE_API_KEY。"}
+            return {**base, "configured": True, "reason": None,
+                    "submitIntervalSeconds": self.marking_submit_interval,
+                    "message": f"千问视觉批改已配置（{self.qwen_marking_model}）。"}
         if not self.has_tencent_credentials:
-            return {
-                "mode": "tencent",
-                "configured": False,
-                "reason": "NotConfigured",
-                "region": self.tencent_region,
-                "message": "尚未配置腾讯云凭据，请在后端设置 TENCENTCLOUD_SECRET_ID 与 TENCENTCLOUD_SECRET_KEY。",
-            }
-        return {
-            "mode": "tencent",
-            "configured": True,
-            "reason": None,
-            "region": self.tencent_region,
-            "submitIntervalSeconds": self.marking_submit_interval,
-            "message": "腾讯云批改已配置。",
-        }
+            return {**base, "configured": False, "reason": "NotConfigured",
+                    "message": "尚未配置腾讯云凭据，请在后端设置 TENCENTCLOUD_SECRET_ID 与 TENCENTCLOUD_SECRET_KEY。"}
+        return {**base, "configured": True, "reason": None,
+                "submitIntervalSeconds": self.marking_submit_interval,
+                "message": "腾讯云批改已配置。"}

@@ -1,8 +1,11 @@
 # FinalBoost
 
-> 2026-09-19：已接入腾讯云试题批改（`SubmitQuestionMarkAgentJob`），按页展示逐题正误、解析与知识点。
-> 配置与未验收项见 [腾讯云批改接入说明](docs/tencent-marking.md)；工作台功能边界见 [备考工作台说明](docs/study-workspace.md)。
-> **真实腾讯云调用尚未验收**（无密钥），文中凡标注「模拟」「离线」处均非真实结果。
+> 2026-09-19：批改已改为**多 Provider 架构**。**当前推荐方案：千问视觉（Qwen VL，默认）**；
+> 腾讯云试题批改保留，可用 `MARKING_PROVIDER=tencent` 切换。
+> 配置、Schema 与未验收项见 [千问批改接入说明](docs/qwen-marking.md)
+> 与 [腾讯云批改接入说明](docs/tencent-marking.md)；工作台功能边界见 [备考工作台说明](docs/study-workspace.md)。
+> **两个 Provider 的真实调用均尚未完整验收**（千问无 API Key；腾讯云服务未开通），
+> 文中凡标注「模拟」「离线」「fixture」处均非真实结果。
 
 期末备考助手。从一份试卷出发，看清薄弱知识点，整理目标，逐步复习。
 
@@ -11,7 +14,8 @@
 - **前端**: React 19 + TypeScript 5.9 + Vite 8 + React Router 7 + Playwright 1.63
 - **后端**: Python 3.13 + FastAPI + SQLite + Pydantic 2 + Pillow
 - **鉴权**: 用户名密码（scrypt 哈希）+ 短期访问令牌 + HttpOnly 刷新 Cookie
-- **当前判卷**: 腾讯云试题批改 Agent（`MARKING_MODE=tencent`，离线验收用 `fixture`）；
+- **当前批改**: 多 Provider — 千问视觉 `qwen3-vl-plus`（默认）/ 腾讯云试题批改 Agent，
+  经 `MARKING_PROVIDER` 切换；离线验收用 `MARKING_MODE=fixture`（只替换外部边界）。
   另有本机演示模式（`GRADING_MODE=mock`）返回固定示例分数，界面明确标注为模拟数据
 
 ## 目录结构
@@ -32,7 +36,7 @@ FinalBoost/
 │   │   ├── auth.py    # 账号接口与令牌管理
 │   │   ├── business.py# 考试、文件、判卷、诊断接口
 │   │   ├── grading.py # 模拟判卷后台执行器
-│   │   ├── marking/   # 腾讯云批改：provider(SDK 边界)/fixture/service/router/models
+│   │   ├── marking/   # 批改：base(Provider 契约)/qwen/provider(腾讯云)/fixture/service/router/models
 │   │   ├── db.py      # SQLite 事务与迁移
 │   │   ├── config.py  # 环境配置
 │   │   ├── schemas.py # Pydantic 数据模型
@@ -112,18 +116,20 @@ npm run dev
 全部已验证可执行（2026-09-19）：
 
 ```bash
-# 后端测试（46/46 通过：27 项原有 + 19 项腾讯云批改）
+# 后端测试（75/75 通过：47 项既有 + 28 项千问批改）
 cd backend && .venv/Scripts/python.exe -m pytest -q
 
 # 前端构建与类型检查
 cd frontend && npm run build
 
-# 浏览器测试 - 原有 9 项（首页 4 + 工作台与流程 4 + 失败场景 1）
+# 浏览器测试 - 既有 9 项（首页 4 + 工作台与流程 4 + 失败场景 1）
 cd frontend && npm run test:e2e && npm run test:failure
 
-# 浏览器测试 - 腾讯云批改（真实本地后端，仅替换腾讯云 SDK 边界）
-cd frontend && npm run test:marking              # 2 项：按页展示 / 失败到恢复
-cd frontend && npm run test:marking-unconfigured # 1 项：缺密钥明确提示
+# 浏览器测试 - 批改（真实本地后端，仅替换外部 Provider 边界）
+cd frontend && npm run test:marking                    # 千问 2 项：按页展示 / 失败到恢复
+cd frontend && npm run test:marking-tencent            # 腾讯云 1 项：切换后仍可工作
+cd frontend && npm run test:marking-unconfigured       # 腾讯云未配置 1 项
+cd frontend && npm run test:marking-unconfigured-qwen  # 千问未配置 1 项
 
 # 合约验证（SHA256 指纹 + OpenAPI 一致性，26 路径）
 backend/.venv/Scripts/python.exe scripts/verify_contracts.py
@@ -132,17 +138,18 @@ backend/.venv/Scripts/python.exe scripts/verify_contracts.py
 cd frontend && npm run check:generated
 ```
 
-### 腾讯云批改验收（2026-09-19）
+### 批改验收（2026-09-19）
 
 | 检查项 | 结果 |
 |--------|------|
-| 官方 SDK 字段核实（tencentcloud-sdk-python-ocr 3.1.175） | 逐字段取自 SDK 源码 |
-| 后端 27 项原有测试 | 全部保留并通过 |
-| 新增 19 项批改测试（SDK 请求边界、嵌套映射、状态流转、限流、幂等、跨账号隔离、重启恢复、无密钥） | 全部通过 |
-| 新增浏览器 3 项（按页正误展示、刷新恢复、供应商失败到恢复、缺密钥提示） | 全部通过 |
+| 官方接口核实 | 腾讯云取 SDK 源码；千问取官方文档 + `openai` SDK 类型定义 |
+| 后端 47 项既有测试 | 全部保留并通过 |
+| 新增 28 项千问测试（请求边界、Schema、正确/错误/空 JSON、超时、网络失败、幂等、隔离、重启、双 Provider、无回退、密钥不外泄） | 全部通过 |
+| 浏览器 14 项（既有 9 + 千问 2 + 腾讯云 1 + 未配置 2） | 全部通过 |
 | 前端构建与类型检查 | 通过 |
 | 合约校验 | 26 路径匹配 |
-| 真实腾讯云调用 / 正误质量 / 实际计费 | **未验收**（无密钥） |
+| 真实千问调用 | **未验收**（无 API Key） |
+| 真实腾讯云调用 | **未验收**（服务未开通，见 tencent-marking.md） |
 
 ## 验收结果摘要（2026-09-16）
 
@@ -187,7 +194,11 @@ cd frontend && npm run check:generated
 | `ALLOWED_ORIGINS` | `http://127.0.0.1:5173,...` | CORS 允许来源，逗号分隔 |
 | `FRONTEND_PORT` | `5173` | Vite 开发服务器端口 |
 | `API_TARGET` | `http://127.0.0.1:8000` | Vite 代理目标后端地址 |
-| `MARKING_MODE` | `disabled` | `disabled`/`fixture`/`tencent`，详见批改接入说明 |
+| `MARKING_PROVIDER` | `qwen` | `qwen` / `tencent` |
+| `MARKING_MODE` | `disabled` | `disabled`/`fixture`/`live`（写 `qwen`/`tencent` 为旧简写 = live + 该 Provider） |
+| `DASHSCOPE_API_KEY` | 空 | 千问 API Key；未设置时回退复用 `EMBEDDING_API_KEY`，仅后端读取 |
+| `QWEN_MARKING_MODEL` | `qwen3-vl-plus` | 千问批改模型 |
+| `QWEN_MARKING_TIMEOUT` | `120` | 秒；千问单次调用超时 |
 | `TENCENTCLOUD_SECRET_ID` | 空 | 腾讯云 SecretId，仅后端读取，不下发前端 |
 | `TENCENTCLOUD_SECRET_KEY` | 空 | 腾讯云 SecretKey，仅后端读取，不下发前端 |
 | `TENCENTCLOUD_TOKEN` | 空 | 可选临时凭据 Token |
@@ -196,29 +207,40 @@ cd frontend && npm run check:generated
 | `MARKING_POLL_INTERVAL` | `6` | 秒；结果查询轮询间隔 |
 | `MARKING_REQUEST_TIMEOUT` | `30` | 秒；单次腾讯云请求超时 |
 
-启用真实批改（PowerShell）：
+启用千问批改（推荐，PowerShell）：
 
 ```powershell
-$env:MARKING_MODE = "tencent"
-$env:TENCENTCLOUD_SECRET_ID = "<SecretId>"
-$env:TENCENTCLOUD_SECRET_KEY = "<SecretKey>"
+$env:MARKING_MODE = "live"
+$env:MARKING_PROVIDER = "qwen"
+$env:DASHSCOPE_API_KEY = "<百炼 API Key>"
 .venv\Scripts\uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-离线验收（不需要密钥，仅替换腾讯云边界）：
+切换到腾讯云：
 
 ```powershell
-$env:MARKING_MODE = "fixture"
+$env:MARKING_MODE = "live"
+$env:MARKING_PROVIDER = "tencent"
+$env:TENCENTCLOUD_SECRET_ID = "<SecretId>"
+$env:TENCENTCLOUD_SECRET_KEY = "<SecretKey>"
+```
+
+离线验收（不需要密钥，仅替换外部边界）：
+
+```powershell
+$env:MARKING_MODE = "fixture"; $env:MARKING_PROVIDER = "qwen"
 ```
 
 ## 局限与待办
 
+- **真实千问调用未验收**: 本机无可用 `DASHSCOPE_API_KEY`，从未向 DashScope 发起真实请求。
+  代码完成，真实 Qwen 调用待 API Key 验收；实际批改质量、Token 计费均未核对。
 - **腾讯云批改服务需先开通**: 2026-09-19 已用真实凭据发起调用，腾讯云返回
   `FailedOperation.UnOpenError`「服务未开通，请前往控制台开通相应服务」。
   开通前界面会显示「批改失败」+ 开通指引（这是预期行为，不会伪造分数）。
-- **真实批改结果未验收**: 因服务未开通，未取得真实 `DONE` 结果；实际正误质量、计费口径、
-  参考答案辅助效果、坐标叠加与跨页大题均未验证，详见 [腾讯云批改接入说明](docs/tencent-marking.md) 第 6 节。
-  已验收部分：凭据有效、网络可达、真实供应商错误被正确处理。
+- **坐标批注未实现**: `boundingBox` 恒为 `null`，界面只展示文字结果。
+  原卷红勾红叉需先验证模型 bbox 的稳定性。
+- 详见 [千问批改接入说明](docs/qwen-marking.md) 第 10 节与 [腾讯云批改接入说明](docs/tencent-marking.md) 第 6 节。
 - **本机演示模式**: `MARKING_MODE=disabled` 时工作台展示固定示例分数（63/100 分，4 道示例题），
   不分析上传图片内容，界面明确标注「模拟数据，仅用于流程联调」。
   该路径与腾讯云批改互不回退：批改启用后失败只会显示失败，不会退回示例分数。

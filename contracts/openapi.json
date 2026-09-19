@@ -2200,7 +2200,7 @@
           "marking-tools"
         ],
         "summary": "Readiness",
-        "description": "Report whether Tencent marking is usable, without echoing credentials.",
+        "description": "Report which provider is active and whether it is usable, without echoing credentials.",
         "operationId": "readiness_api_v1_marking_readiness_get",
         "responses": {
           "200": {
@@ -4756,6 +4756,22 @@
             "type": "array",
             "title": "Knowledgepoints"
           },
+          "errorReason": {
+            "type": "string",
+            "title": "Errorreason",
+            "default": ""
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
           "polygon": {
             "anyOf": [
               {
@@ -4769,6 +4785,10 @@
               }
             ],
             "title": "Polygon"
+          },
+          "boundingBox": {
+            "type": "null",
+            "title": "Boundingbox"
           },
           "score": {
             "type": "null",
@@ -4887,9 +4907,23 @@
           },
           "source": {
             "type": "string",
-            "const": "tencent",
+            "enum": [
+              "qwen",
+              "tencent"
+            ],
             "title": "Source",
             "default": "tencent"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           },
           "pageIndex": {
             "type": "integer",
@@ -4965,6 +4999,29 @@
               }
             ],
             "title": "Queryrequestid"
+          },
+          "usage": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usage"
+          },
+          "latencyMs": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latencyms"
           },
           "createdAt": {
             "type": "number",
@@ -5062,6 +5119,21 @@
             "type": "string",
             "title": "Rightanswer"
           },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "boundingBox": {
+            "type": "null",
+            "title": "Boundingbox"
+          },
           "answers": {
             "items": {
               "$ref": "#/components/schemas/MarkingAnswerOut"
@@ -5101,9 +5173,29 @@
             "enum": [
               "disabled",
               "fixture",
-              "tencent"
+              "live"
             ],
             "title": "Mode"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "qwen",
+              "tencent"
+            ],
+            "title": "Provider",
+            "default": "qwen"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
           },
           "reason": {
             "anyOf": [
@@ -5165,6 +5257,11 @@
             "type": "number",
             "title": "Angle"
           },
+          "subject": {
+            "type": "string",
+            "title": "Subject",
+            "default": ""
+          },
           "totalScore": {
             "type": "null",
             "title": "Totalscore"
@@ -5175,7 +5272,10 @@
           },
           "coordinateSpace": {
             "type": "string",
-            "const": "provider_pixels",
+            "enum": [
+              "provider_pixels",
+              "none"
+            ],
             "title": "Coordinatespace"
           },
           "coordinateAlignmentVerified": {

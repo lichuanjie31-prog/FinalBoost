@@ -16,11 +16,25 @@ from .grading import GradingWorker
 from .schemas import ErrorEnvelope
 from .marking.router import router as marking_router
 from .marking.provider import TencentMarkingProvider
+from .marking.qwen import QwenMarkingProvider
 from .marking.fixture import FixtureMarkingProvider
+from .marking.service import ExamMarkingTool
 from .agent.router import router as agent_router
+from concurrent.futures import ThreadPoolExecutor
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def build_marking_providers(settings):
+    """One provider instance per name, so a job is always polled by its own provider.
+
+    In fixture mode every provider is stubbed, which keeps the whole pipeline real
+    while the external boundary stays offline.
+    """
+    if settings.resolve_marking()[0] == "fixture":
+        return {name: FixtureMarkingProvider(settings, name=name) for name in ("qwen", "tencent")}
+    return {"qwen": QwenMarkingProvider(settings), "tencent": TencentMarkingProvider(settings)}
 
 
 def create_app(**kwargs):
@@ -48,6 +62,9 @@ def create_app(**kwargs):
     async def lifespan(app):
         settings.validate()
         db.migrate()
+        # An in-process model call cannot survive a restart, so anything left
+        # mid-flight by a previous run is failed rather than left hanging.
+        ExamMarkingTool(db, app.state.marking_providers, settings).reconcile_interrupted()
 
         worker = GradingWorker(db)
         if settings.grading_mode == "llm":
@@ -58,6 +75,10 @@ def create_app(**kwargs):
             yield
         finally:
             worker.close()
+            # Tests may replace the pool with None to run providers inline.
+            executor = getattr(app.state, "marking_executor", None)
+            if executor is not None:
+                executor.shutdown(wait=False)
 
     app = FastAPI(
         title="FinalBoost",
@@ -70,10 +91,11 @@ def create_app(**kwargs):
     app.state.settings = settings
     app.state.db = db
     app.state.rag_service = rag_service
-    # MARKING_MODE=fixture swaps only the Tencent SDK boundary for a local stub;
-    # every other layer stays real.
-    app.state.marking_provider = (FixtureMarkingProvider(settings) if settings.marking_mode == "fixture"
-                                  else TencentMarkingProvider(settings))
+    # MARKING_MODE=fixture swaps only the external provider boundary for a local
+    # stub; every other layer stays real. Synchronous providers run on this pool so
+    # a model call never holds the HTTP request open.
+    app.state.marking_providers = build_marking_providers(settings)
+    app.state.marking_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="marking")
 
     app.add_middleware(
         CORSMiddleware,
@@ -123,6 +145,8 @@ def create_app(**kwargs):
                 # Marks whether the real Tencent pathway is usable, so the UI never
                 # presents a demo score as a real marking result.
                 "markingMode": readiness["mode"],
+                "markingProvider": readiness["provider"],
+                "markingModel": readiness["model"],
                 "markingConfigured": readiness["configured"],
                 "markingMessage": readiness["message"],
             },

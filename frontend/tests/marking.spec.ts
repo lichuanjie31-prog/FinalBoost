@@ -33,7 +33,7 @@ async function createExam(page: import('@playwright/test').Page) {
   await expect(page).toHaveURL(/\/app\/exams\//)
 }
 
-test('按页展示腾讯云批改的正误、解析与知识点，刷新不丢任务', async ({ page }) => {
+test('按页展示千问批改的正误、解析与知识点，刷新不丢任务', async ({ page }) => {
   await createExam(page)
   // The real marking workspace is live, not the labelled local demo.
   await expect(page.getByTestId('marking-fixture')).toBeVisible()
@@ -62,6 +62,13 @@ test('按页展示腾讯云批改的正误、解析与知识点，刷新不丢�
   await expect(page.getByTestId('mark-right-answer').first()).toHaveText('x^2/2 + C')
   await expect(page.getByTestId('mark-analysis').first()).toContainText('漏写积分常数')
   await expect(page.getByTestId('mark-knowledge').first()).toContainText('不定积分')
+  // The error reason and the provider that produced the result are both visible.
+  await expect(page.getByTestId('mark-error-reason').first()).toContainText('漏写积分常数 C')
+  await expect(page.getByTestId('mark-provenance')).toContainText('千问视觉')
+  await expect(page.getByTestId('mark-provenance')).toContainText('qwen3-vl-plus')
+  await expect(page.getByTestId('page-provenance')).toContainText('Token')
+  // Coordinates stay text-only, as the notice says.
+  await expect(page.getByTestId('marking-report').first()).toContainText('原卷坐标批注仍在测试中')
 
   // No percentage score is invented, and the old mock diagnosis is gone.
   await expect(page.getByTestId('mark-summary')).toContainText('正确 1')
@@ -97,7 +104,7 @@ test('供应商失败显示失败且不给示例分数，恢复后继续成功',
 
   const failed = page.getByTestId('marking-page').nth(1)
   await expect(failed.getByTestId('page-status')).toHaveText('批改失败', { timeout: 25000 })
-  await expect(failed.getByTestId('page-error-code')).toContainText('FailedOperation.ImageNotSupported')
+  await expect(failed.getByTestId('page-error-code')).toContainText('qwen:BadResponse')
   // A failure never carries a score or a result body.
   await expect(failed.getByTestId('marking-report')).toHaveCount(0)
   await expect(page.getByTestId('marking-failed-note')).toContainText('1 页批改失败')

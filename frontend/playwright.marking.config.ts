@@ -17,6 +17,7 @@ export default defineConfig({
       env: {
         ALLOWED_ORIGINS: 'http://127.0.0.1:5175',
         MARKING_MODE: 'fixture',
+        MARKING_PROVIDER: 'qwen',
         // The vendor's 10-per-minute limit is respected by default; this suite
         // lowers the pacing so the flow completes inside a test timeout.
         MARKING_SUBMIT_INTERVAL: '0.2',

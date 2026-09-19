@@ -10,7 +10,9 @@
     "test:e2e": "playwright test",
     "test:failure": "playwright test --config playwright.failure.config.ts",
     "test:marking": "playwright test --config playwright.marking.config.ts",
+    "test:marking-tencent": "playwright test --config playwright.marking-tencent.config.ts",
     "test:marking-unconfigured": "playwright test --config playwright.marking-unconfigured.config.ts",
+    "test:marking-unconfigured-qwen": "playwright test --config playwright.marking-unconfigured-qwen.config.ts",
     "check:generated": "node ../scripts/verify_generated.mjs",
     "generate:api": "openapi-typescript ../contracts/openapi.json -o src/api/generated.ts"
   },

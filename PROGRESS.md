@@ -99,3 +99,55 @@
 ### 本轮回归（真实凭据配置后复跑）
 - 后端 47/47 通过（新增 1 项错误码映射测试）。合约 26 路径一致。前端构建与类型同步通过。
 - 浏览器批改 2/2 通过。
+
+## 2026-09-19 多 Provider 改造：新增千问视觉批改
+
+### 官方接口核实（未凭记忆）
+- 核实来源：阿里云百炼官方文档（结构化输出 / qwen-vl OpenAI 兼容）+ 已安装 `openai` SDK 类型定义。
+- 已核实：base `https://dashscope.aliyuncs.com/compatible-mode/v1`；模型 `qwen3-vl-plus`
+  支持结构化输出；图片走 `image_url` + `data:image/png;base64,…`；
+  `response_format.json_schema` 需 `name`（必填）与 `strict`。
+- 复用项目既有的阿里云配置方式（`DASHSCOPE_API_KEY` 未设置时回退 `EMBEDDING_API_KEY`），
+  未另造配置系统。`real_secret()` 把 `your-...` 占位值视为未配置，避免「显示已配置却 401」。
+
+### 架构
+- `base.py`（Provider 契约/错误/图片归一化）+ `qwen.py` + `provider.py`（腾讯云保留）+ `fixture.py`。
+- 共用：数据库任务、权限、幂等、限流、状态机、API、前端组件、刷新与重启恢复。
+- 异步/同步由 `async_remote` 区分：腾讯云 pending→轮询；千问单次同步调用，
+  在 `marking_executor` 线程池执行，**不阻塞 HTTP 请求**，状态仍走 queued→running→终态。
+- 每个任务记录自己的 `provider`，`get()` 按任务所属 Provider 轮询——切换 Provider 不会遗留在途任务。
+- 迁移 006 新增 `provider`/`model`/`usage_json`/`latency_ms`，旧数据默认 `tencent`，原记录仍可读。
+
+### 防乱判与安全
+- `judgement` 非 correct/incorrect（含缺失、枚举外值）→ 未判定；
+  题干为空或学生作答为空 → **强制未判定**，禁止判错。
+- JSON 解析失败 / 空题目 → 整页 failed，无任何 silent fallback，`totalScore` 字段不存在。
+- 读超时 → `submission_unknown`，禁止自动重提（避免重复计费）。
+- 千问显式拒绝参考答案图片（422），不静默忽略。
+- API Key 不出现在响应、日志、请求体中（有测试锁定）。
+
+### 修复的真实缺陷
+1. **轮询会清空远端任务号**：`_persist_outcome` 原先无条件写 `provider_job_id`，
+   导致查询后 providerJobId 变 null，下一次轮询用 null 查任务。已改为仅在结果实际提供时写入。
+2. **WAIT/RUN 被压成一个状态**：重构中把二者都映射为 pending，丢失「排队中/处理中」区分。
+   已恢复为 queued/running 一一对应。
+3. **同步任务的状态语义**：入队前先置 `queued`，`submitting` 只保留给异步提交阶段。
+
+### ⚠️ 上一轮遗留的真实回归（本轮发现并修复）
+- 上一轮为配置凭据在 `backend/.env` 写入 `MARKING_MODE=tencent`，
+  而 `main.py` 的 `load_dotenv()` 会读取它 → 浏览器默认套件被切到真实批改模式，
+  与「模拟数据，仅用于流程联调」断言冲突。**上一轮我改完 .env 没有复跑默认浏览器套件，因此漏报。**
+- 修复：浏览器测试服务改为**环境密闭**——`playwright.config.ts` 与 `playwright.failure.config.ts`
+  显式传 `MARKING_MODE=disabled`，不再继承开发机 `.env`。
+
+### 验收结果
+- 后端 75/75 通过（47 项既有全部保留 + 28 项千问新增）。
+- 浏览器 14/14 通过：既有 9 项 + 千问 2 项 + 腾讯云 1 项 + 未配置 2 项。
+- 合约 26 路径一致；前端构建与生成类型同步通过。
+- 千问测试只 fake HTTP 边界，服务/数据库/状态机/HTTP API 全部真跑。
+
+### 未验收（如实保留）
+- **真实千问调用**：无可用 `DASHSCOPE_API_KEY`，从未发起真实请求。
+  → **代码完成，真实 Qwen 调用待 API Key 验收。**
+- 实际批改质量、Token 计费、坐标 bbox 稳定性、跨页大题均未验收。
+- 腾讯云侧仍未开通服务（上一轮结论不变）。

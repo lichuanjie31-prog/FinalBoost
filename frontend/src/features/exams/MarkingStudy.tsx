@@ -4,7 +4,7 @@ import { AlertTriangle, ArrowLeft, ArrowRight, CheckCircle2, FileImage, RefreshC
 import { ErrorMessage } from '../../components/Shared'
 import { AIPanel } from '../../components/AIPanel'
 import { study, type Exam } from '../../api/study'
-import { marking, type MarkingJob, type MarkingReadiness } from '../../api/marking'
+import { marking, tokenUsage, PROVIDER_LABEL, type MarkingJob, type MarkingReadiness } from '../../api/marking'
 import { capabilities, type Capabilities } from '../../api/capabilities'
 import { ApiError } from '../../api/client'
 import { MarkingReport } from './MarkingReport'
@@ -19,6 +19,19 @@ const STATUS_LABEL: Record<string, string> = {
 const MAX_PAGES = 10
 
 const wait = (seconds: number) => new Promise(resolve => setTimeout(resolve, seconds * 1000))
+
+// Which provider and model produced this page, plus what it cost, so a result
+// can always be traced back to the call that made it.
+function Provenance({ job }: { job: MarkingJob }) {
+  const usage = tokenUsage(job)
+  return <p className="fine-print" data-testid="page-provenance">
+    {PROVIDER_LABEL[job.source] ?? job.source}
+    {job.model ? ` · ${job.model}` : ''}
+    {job.providerJobId ? ` · 任务 ${job.providerJobId}` : ''}
+    {job.latencyMs ? ` · 耗时 ${(job.latencyMs / 1000).toFixed(1)}s` : ''}
+    {usage?.total_tokens ? ` · Token ${usage.prompt_tokens ?? '—'}/${usage.completion_tokens ?? '—'}/${usage.total_tokens}` : ''}
+  </p>
+}
 
 function Preview({ file }: { file: File }) {
   const [url, setUrl] = useState('')
@@ -156,6 +169,9 @@ export function MarkingStudy({ id }: { id: string }) {
         <p className="muted">上传包含题目与作答的清晰照片，按页码顺序排列，每一页会单独创建批改任务。</p>
         {readiness && !ready && <p className="study-warning" role="alert" data-testid="marking-not-configured">
           <AlertTriangle size={16} />{readiness.message} 批改功能暂不可用，不会生成示例分数。</p>}
+        {readiness && <p className="fine-print" data-testid="marking-provider">
+          当前批改服务：{PROVIDER_LABEL[readiness.provider] ?? readiness.provider}
+          {readiness.model ? ` · ${readiness.model}` : ''}{readiness.ready ? '' : '（未配置）'}</p>}
         {readiness?.mode === 'fixture' && <p className="study-mode" data-testid="marking-fixture">离线验收模式：腾讯云边界由本地桩替代，未发生真实调用</p>}
         <label className={'upload-zone ' + (dragging ? 'is-dragging ' : '') + (busy ? 'is-disabled' : '')} onDragOver={e => { e.preventDefault(); if (!busy) setDragging(true) }} onDragLeave={() => setDragging(false)} onDrop={e => { e.preventDefault(); setDragging(false); choose(e.dataTransfer.files) }}>
           <span className="upload-symbol"><Upload size={26} /></span><strong>拖入试卷照片，或点击选择</strong><span>JPEG、PNG、WebP · 每张最多 10 MiB</span><small>最多 {MAX_PAGES} 张 · 已选 {files.length} 张</small>
@@ -164,13 +180,13 @@ export function MarkingStudy({ id }: { id: string }) {
         {!!files.length && <ol className="paper-previews">{files.map((entry, index) => <li key={entry.key}><Preview file={entry.file} /><div><strong>第 {index + 1} 页</strong><span>{entry.file.name}</span></div>{entry.uploadedId && <CheckCircle2 size={16} />}<button className="icon-button" disabled={busy} aria-label={'移除 ' + entry.file.name} onClick={() => { setFiles(old => old.filter(f => f.key !== entry.key)); intent.current = crypto.randomUUID() }}><X size={16} /></button></li>)}</ol>}
         <ErrorMessage error={uploadError} />{progress && <p role="status" className="progress-message">{progress}</p>}
         <button className="button full-width" disabled={busy || !files.length || !ready} onClick={submit}>{busy ? '正在提交…' : '上传并开始批改'}<ArrowRight size={17} /></button>
-        <p className="fine-print">由腾讯云试题批改返回题目、作答、正误与解析。腾讯云限制每分钟提交 10 张，多页试卷会按页顺序提交。AI 批改结果仅供参考，请自行核对。</p>
+        <p className="fine-print">由{PROVIDER_LABEL[readiness?.provider ?? ''] ?? 'AI'}识别题目、作答、正误与解析，结果以文字形式展示，原卷坐标批注仍在测试中。多页试卷按页顺序分别提交，每页独立批改。AI 批改结果仅供参考，请自行核对。</p>
       </section>
 
       <section className="panel jobs-panel">
         <div className="panel-title"><div><span className="eyebrow">FEEDBACK</span><h2>批改结果</h2></div><span className="tag tag-muted">{jobs.length} 页任务</span></div>
         {!jobs.length ? <div className="results-empty"><FileImage size={32} /><h3>你的第一份分析，从这里开始</h3><p>提交试卷后，在这里按页查看题目、作答、正误和解析。</p></div> : <>
-          {pending.length > 0 && <p role="status" className="progress-message" data-testid="marking-pending"><RefreshCw size={16} className="spin" />{pending.length} 页正在批改，可安全刷新页面</p>}
+          {pending.length > 0 && <p role="status" className="progress-message" data-testid="marking-pending"><RefreshCw size={16} className="spin" />AI 正在识别并批改试卷…共 {pending.length} 页，可安全刷新页面</p>}
           {unresolved.length > 0 && <p className="study-warning" role="alert" data-testid="marking-unresolved"><AlertTriangle size={16} />有 {unresolved.length} 页提交结果未知，请勿重复提交以免重复计费，可联系管理员核对。</p>}
           <ol className="marking-pages">
             {jobs.map(job => <li key={job.jobId} className={'marking-page is-' + job.status} data-testid="marking-page">
@@ -178,7 +194,7 @@ export function MarkingStudy({ id }: { id: string }) {
                 <strong>第 {job.pageIndex + 1} 页</strong>
                 <span className={'job-status ' + job.status} data-testid="page-status">{STATUS_LABEL[job.status] || job.status}</span>
               </div>
-              {job.providerJobId && <p className="fine-print">腾讯云任务 {job.providerJobId}</p>}
+              <Provenance job={job} />
               {job.error && <><ErrorMessage error={job.error.message} />{job.error.code && <p className="fine-print" data-testid="page-error-code">错误码 {job.error.code}</p>}</>}
               {job.status === 'failed' && <p className="fine-print">未生成任何分数。请检查图片清晰度后重新上传该页。</p>}
               {job.result && <MarkingReport job={job} />}

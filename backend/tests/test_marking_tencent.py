@@ -93,7 +93,8 @@ def test_provider_binds_verified_field_names_onto_the_real_sdk_request():
                         tencent_region='ap-guangzhou')
     provider = TencentMarkingProvider(settings, client=client)
     result = provider.submit(png_bytes(), png_bytes())
-    assert result['JobId'] == 'remote-1'
+    # submit now returns a ProviderOutcome carrying the remote job id.
+    assert result.provider_job_id == 'remote-1' and result.state == 'queued'
     request = client.requests[0]
     image, _ = prepare_image(png_bytes())
     assert request.ImageBase64 == base64.b64encode(image).decode('ascii')
@@ -112,7 +113,8 @@ def test_actionable_vendor_codes_get_a_specific_message():
     assert '开通' in provider_message('FailedOperation.UnOpenError')
     assert 'SecretKey' in provider_message('AuthFailure.SignatureFailure')
     # Unknown codes keep the generic wording: vendor text is never echoed through.
-    assert provider_message('SomeUnknownVendorCode') == '腾讯云请求未完成，请根据错误码和 RequestId 排查'
+    # The fallback is shared across providers, so it names no single vendor.
+    assert provider_message('SomeUnknownVendorCode') == '批改服务请求未完成，请根据错误码和 RequestId 排查'
     assert provider_message('X', 'fallback') == 'fallback'
 
 
@@ -162,7 +164,10 @@ def test_mapping_rejects_incomplete_payloads():
 # --------------------------------------------------------------------------
 
 def marking_client(tmp_path, **kwargs):
+    # This module exercises the Tencent pathway specifically, so the provider is
+    # pinned rather than inherited from whatever MARKING_PROVIDER the host has.
     kwargs.setdefault('marking_mode', 'fixture')
+    kwargs.setdefault('marking_provider', 'tencent')
     kwargs.setdefault('marking_submit_interval', 0.01)
     kwargs.setdefault('marking_poll_interval', 0.01)
     return client_for(tmp_path, **kwargs)
@@ -244,7 +249,7 @@ def test_repeat_request_key_is_idempotent_and_not_recharged(tmp_path, monkeypatc
     monkeypatch.setenv('MARKING_FIXTURE_STAGES', '0')
     with marking_client(tmp_path) as c:
         auth, exam, file = setup_exam(c)
-        provider = c.app.state.marking_provider
+        provider = c.app.state.marking_providers['tencent']
         calls = []
         original = provider.submit
         provider.submit = lambda image, reference=None: (calls.append(1), original(image, reference))[1]
@@ -261,7 +266,7 @@ def test_unknown_submission_is_never_retried(tmp_path, monkeypatch):
     monkeypatch.setenv('MARKING_FIXTURE_SCENARIO', 'submit_timeout')
     with marking_client(tmp_path) as c:
         auth, exam, file = setup_exam(c)
-        provider = c.app.state.marking_provider
+        provider = c.app.state.marking_providers['tencent']
         calls = []
         original = provider.submit
         provider.submit = lambda image, reference=None: (calls.append(1), original(image, reference))[1]
@@ -348,12 +353,15 @@ def test_missing_credentials_are_reported_and_never_scored(tmp_path, monkeypatch
         readiness = c.get('/api/v1/marking/readiness', headers=auth)
         assert readiness.status_code == 200, readiness.text
         state = readiness.json()['data']
-        assert state['ready'] is False and state['mode'] == 'tencent'
+        # `mode` is now the execution shape; `provider` names the vendor.
+        assert state['ready'] is False and state['mode'] == 'live'
+        assert state['provider'] == 'tencent'
         assert state['reason'] == 'NotConfigured' and '尚未配置' in state['message']
         # The secret never appears anywhere in the readiness payload.
         assert 'secret' not in readiness.text.lower().replace('tencentcloud_secret', '')
         health = c.get('/api/v1/health').json()['data']
-        assert health['markingConfigured'] is False and health['markingMode'] == 'tencent'
+        assert health['markingConfigured'] is False and health['markingMode'] == 'live'
+        assert health['markingProvider'] == 'tencent'
         blocked = submit_page(c, auth, exam, file['fileId'], 'no-key')
         assert blocked.status_code == 503, blocked.text
         assert '尚未配置' in blocked.json()['message']

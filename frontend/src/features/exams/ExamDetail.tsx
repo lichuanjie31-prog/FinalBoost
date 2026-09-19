@@ -4,14 +4,14 @@ import { ArrowLeft, ArrowRight, Upload, FileImage, RefreshCw, CheckCircle2, X } 
 import { ErrorMessage } from '../../components/Shared'
 import { AIPanel } from '../../components/AIPanel'
 import { study, type Exam, type Grading, type Diagnosis } from '../../api/study'
-import { capabilities, type Capabilities } from '../../api/capabilities'
+import { capabilities, type Capabilities, type MarkingMode } from '../../api/capabilities'
 import { QuestionScores } from './QuestionScores'
 import { MarkingStudy } from './MarkingStudy'
 
 type LocalFile = { file:File; key:string; uploadedId?:string }
 export function ExamDetail() {
   const { id = '' } = useParams()
-  const [mode, setMode] = useState<'disabled' | 'fixture' | 'tencent' | null>(null)
+  const [mode, setMode] = useState<MarkingMode | null>(null)
   useEffect(() => {
     const controller = new AbortController()
     // The backend decides which pathway is live: real Tencent marking, or the

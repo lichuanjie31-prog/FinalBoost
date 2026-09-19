@@ -269,7 +269,7 @@ export interface paths {
         };
         /**
          * Readiness
-         * @description Report whether Tencent marking is usable, without echoing credentials.
+         * @description Report which provider is active and whether it is usable, without echoing credentials.
          */
         get: operations["readiness_api_v1_marking_readiness_get"];
         put?: never;
@@ -895,8 +895,17 @@ export interface components {
             rightAnswer: string;
             /** Knowledgepoints */
             knowledgePoints: string[];
+            /**
+             * Errorreason
+             * @default
+             */
+            errorReason: string;
+            /** Confidence */
+            confidence?: number | null;
             /** Polygon */
             polygon?: number[] | null;
+            /** Boundingbox */
+            boundingBox?: null;
             /** Score */
             score?: null;
             /** Maxscore */
@@ -942,9 +951,11 @@ export interface components {
             /**
              * Source
              * @default tencent
-             * @constant
+             * @enum {string}
              */
-            source: "tencent";
+            source: "qwen" | "tencent";
+            /** Model */
+            model?: string | null;
             /**
              * Pageindex
              * @default 0
@@ -966,6 +977,12 @@ export interface components {
             requestId?: string | null;
             /** Queryrequestid */
             queryRequestId?: string | null;
+            /** Usage */
+            usage?: {
+                [key: string]: unknown;
+            } | null;
+            /** Latencyms */
+            latencyMs?: number | null;
             /**
              * Createdat
              * @default 0
@@ -1003,6 +1020,10 @@ export interface components {
             imagePolygons: number[][];
             /** Rightanswer */
             rightAnswer: string;
+            /** Confidence */
+            confidence?: number | null;
+            /** Boundingbox */
+            boundingBox?: null;
             /** Answers */
             answers: components["schemas"]["MarkingAnswerOut"][];
             /**
@@ -1019,7 +1040,15 @@ export interface components {
              * Mode
              * @enum {string}
              */
-            mode: "disabled" | "fixture" | "tencent";
+            mode: "disabled" | "fixture" | "live";
+            /**
+             * Provider
+             * @default qwen
+             * @enum {string}
+             */
+            provider: "qwen" | "tencent";
+            /** Model */
+            model?: string | null;
             /** Reason */
             reason?: string | null;
             /** Message */
@@ -1035,15 +1064,20 @@ export interface components {
             questions: components["schemas"]["MarkingQuestionOut"][];
             /** Angle */
             angle: number;
+            /**
+             * Subject
+             * @default
+             */
+            subject: string;
             /** Totalscore */
             totalScore?: null;
             /** Maxscore */
             maxScore?: null;
             /**
              * Coordinatespace
-             * @constant
+             * @enum {string}
              */
-            coordinateSpace: "provider_pixels";
+            coordinateSpace: "provider_pixels" | "none";
             /** Coordinatealignmentverified */
             coordinateAlignmentVerified: boolean;
             /**

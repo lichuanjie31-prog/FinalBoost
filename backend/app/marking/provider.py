@@ -1,4 +1,4 @@
-"""Tencent SDK boundary. No implicit retry of chargeable submissions.
+"""Tencent Cloud question-marking Agent provider.
 
 Field names below were verified against the installed SDK
 (tencentcloud-sdk-python-ocr 3.1.175, tencentcloud/ocr/v20181119/models.py)
@@ -19,9 +19,15 @@ together to join a single question across pages — a behaviour this project doe
 not use, because each uploaded page becomes its own job.
 """
 import base64
-import io
 import json
-from PIL import Image, ImageOps, UnidentifiedImageError
+
+from .base import (ALLOWED_IMAGE_FORMATS, MAX_ASSIST_IMAGES, MAX_BASE64_BYTES,  # noqa: F401
+                   ProviderError, ProviderOutcome, provider_message, prepare_image)
+from .models import normalize_result
+
+__all__ = ["ALLOWED_IMAGE_FORMATS", "MAX_ASSIST_IMAGES", "MAX_BASE64_BYTES", "ProviderError",
+           "ProviderOutcome", "QUESTION_CONFIG", "TencentMarkingProvider", "build_submit_params",
+           "prepare_image", "provider_message"]
 
 # Verified QuestionConfigMap switches. DisableAnswerAnalysis is deliberately absent:
 # we always want the answer analysis text.
@@ -31,55 +37,6 @@ QUESTION_CONFIG = {
     "StepCorrection": True,    # 启用步骤级批改
     "OutputSubQuestionsAndCoords": True,  # 输出子题干和插图坐标
 }
-
-ALLOWED_IMAGE_FORMATS = {"PNG", "JPEG", "WEBP"}
-
-# Vendor codes that deserve a specific, actionable message. Only codes listed here
-# are ever surfaced verbatim-adjacent; anything else falls back to the generic
-# text, so a vendor message that echoes our input can never reach the user.
-ACTIONABLE_CODES = {
-    "FailedOperation.UnOpenError": "腾讯云试题批改服务尚未开通，请前往腾讯云控制台开通「文字识别 · 试题批改」后重试",
-    "AuthFailure.SecretIdNotFound": "腾讯云 SecretId 无效，请检查后端凭据配置",
-    "AuthFailure.SignatureFailure": "腾讯云签名校验失败，请检查后端 SecretKey 是否正确",
-    "AuthFailure.TokenFailure": "腾讯云临时 Token 无效或已过期，请重新获取",
-    "FailedOperation.InsufficientBalance": "腾讯云账户余额不足，请充值后重试",
-    "RequestLimitExceeded": "腾讯云请求过于频繁，请稍后重试",
-}
-
-
-def provider_message(code, fallback="腾讯云请求未完成，请根据错误码和 RequestId 排查"):
-    return ACTIONABLE_CODES.get(code, fallback)
-MAX_BASE64_BYTES = 10_000_000
-MAX_ASSIST_IMAGES = 2
-
-
-class ProviderError(Exception):
-    def __init__(self, code, message, request_id=None, uncertain=False):
-        super().__init__(message)
-        self.code, self.request_id, self.uncertain = code, request_id, uncertain
-
-
-def prepare_image(content):
-    # Pillow cannot decode PDF and reports it as an unidentified file, so detect
-    # it up front to give the user an actionable message.
-    if content[:5] == b"%PDF-":
-        raise ValueError("本轮暂不支持 PDF，请先转为 JPEG 或 PNG 图片后上传")
-    try:
-        with Image.open(io.BytesIO(content)) as img:
-            img.load()
-            if img.format not in ALLOWED_IMAGE_FORMATS:
-                raise ValueError("仅支持 JPEG、PNG、WebP")
-            # Normalize EXIF orientation and WebP to the same PNG used for coordinates.
-            normalized = ImageOps.exif_transpose(img).convert("RGB")
-            out = io.BytesIO()
-            normalized.save(out, format="PNG")
-            data = out.getvalue()
-            size = normalized.size
-    except (UnidentifiedImageError, OSError) as exc:
-        raise ValueError("文件不是有效的 JPEG、PNG 或 WebP 图片") from None
-    if len(base64.b64encode(data)) > MAX_BASE64_BYTES:
-        raise ValueError("转换后 Base64 超过 10MB，请缩小图片后重新上传")
-    return data, size
 
 
 def build_submit_params(image, reference=None):
@@ -97,13 +54,17 @@ def build_submit_params(image, reference=None):
 
 
 class TencentMarkingProvider:
+    name = "tencent"
+    async_remote = True
+
     def __init__(self, settings, client=None):
         self._settings = settings
         self._client = client
 
     def readiness(self):
         state = dict(self._settings.marking_readiness())
-        if state["configured"] and self._settings.marking_mode == "tencent" and self._client is None:
+        mode, provider = self._settings.resolve_marking()
+        if state["configured"] and mode == "live" and provider == "tencent" and self._client is None:
             try:
                 import tencentcloud.ocr.v20181119  # noqa: F401
             except ImportError:
@@ -115,8 +76,11 @@ class TencentMarkingProvider:
         if self._client is not None:
             return
         settings = self._settings
-        if settings.marking_mode == "disabled":
-            raise ProviderError("MarkingDisabled", "腾讯云批改尚未启用")
+        mode, provider = settings.resolve_marking()
+        if mode == "disabled":
+            raise ProviderError("MarkingDisabled", "试卷批改尚未启用")
+        if provider != "tencent":
+            raise ProviderError("ProviderMismatch", "当前配置的批改服务不是腾讯云")
         if not settings.has_tencent_credentials:
             raise ProviderError(
                 "NotConfigured",
@@ -156,7 +120,37 @@ class TencentMarkingProvider:
             ) from None
 
     def submit(self, image, reference=None):
-        return self._call("SubmitQuestionMarkAgentJob", build_submit_params(image, reference))
+        """Create the remote job. Returns a pending outcome carrying its id."""
+        response = self._call("SubmitQuestionMarkAgentJob", build_submit_params(image, reference))
+        remote_id = response.get("JobId")
+        if not isinstance(remote_id, str) or not remote_id:
+            # The vendor may or may not have accepted the job, so callers must not
+            # resubmit automatically.
+            raise ProviderError("SubmissionUnknown",
+                                "提交结果未知，请勿自动重新提交。需核对供应商任务，避免重复计费。",
+                                response.get("RequestId"), uncertain=True)
+        return ProviderOutcome(state="queued", provider_job_id=remote_id,
+                               request_id=response.get("RequestId"), raw=response)
 
-    def describe(self, job_id):
-        return self._call("DescribeQuestionMarkAgentJob", {"JobId": job_id})
+    def get_result(self, provider_job_id):
+        raw = self._call("DescribeQuestionMarkAgentJob", {"JobId": provider_job_id})
+        status = raw.get("JobStatus")
+        common = {"raw": raw, "request_id": raw.get("RequestId")}
+        if status in ("WAIT", "RUN"):
+            # WAIT and RUN are distinct states for the user, so keep them distinct.
+            return ProviderOutcome(state="running" if status == "RUN" else "queued", **common)
+        if status == "FAIL":
+            code = str(raw.get("ErrorCode") or "ProviderFailed")
+            return ProviderOutcome(state="failed", error={
+                "code": code,
+                "message": provider_message(code, str(raw.get("ErrorMessage") or "腾讯云批改失败，请按错误码和 RequestId 排查")),
+            }, **common)
+        if status != "DONE":
+            return ProviderOutcome(state="failed", error={
+                "code": "InvalidProviderStatus", "message": "供应商返回未知状态"}, **common)
+        try:
+            result = normalize_result(raw)
+        except (ValueError, TypeError, AttributeError):
+            return ProviderOutcome(state="failed", error={
+                "code": "InvalidProviderResult", "message": "批改结果不完整，未生成分数，请人工核对"}, **common)
+        return ProviderOutcome(state="succeeded", result=result, **common)

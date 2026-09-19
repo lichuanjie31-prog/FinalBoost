@@ -10,13 +10,14 @@ router = APIRouter(prefix='/api/v1/marking', tags=['marking-tools'])
 
 
 def tool(request):
-    return ExamMarkingTool(request.app.state.db, request.app.state.marking_provider,
-                           request.app.state.settings)
+    state = request.app.state
+    return ExamMarkingTool(state.db, state.marking_providers, state.settings,
+                           getattr(state, 'marking_executor', None))
 
 
 @router.get('/readiness', response_model=Envelope[MarkingReadiness])
 def readiness(request: Request, user=Depends(current_user)):
-    """Report whether Tencent marking is usable, without echoing credentials."""
+    """Report which provider is active and whether it is usable, without echoing credentials."""
     return envelope(tool(request).readiness())
 
 

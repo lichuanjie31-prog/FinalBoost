@@ -4,17 +4,32 @@ import pytest
 from PIL import Image
 from test_auth import client_for, register, bearer
 from test_business import setup_exam
+from app.marking.base import ProviderOutcome
 from app.marking.models import normalize_result
 
 RESULT = {'JobStatus':'DONE','Angle':0,'MarkInfos':[{'MarkItemTitle':'积分题','MarkInfos':[{'MarkItemTitle':'第一问','AnswerInfos':[{'HandwriteInfo':'x','IsCorrect':False,'AnswerAnalysis':'漏掉常数','HandwriteInfoPositions':[1,2,20,2,20,30,1,30],'KnowledgePoints':['积分'],'RightAnswer':'x+C'}]}]}]}
 
+def use_provider(c, provider, name='tencent'):
+    """Install a test double for one provider name in the app's registry."""
+    c.app.state.marking_providers[name] = provider
+    return provider
+
+def marking_client(tmp_path):
+    # Pin the provider so the assertions below do not depend on the host's env.
+    return client_for(tmp_path, marking_mode='tencent')
+
 class Provider:
+    name = 'tencent'
+    async_remote = True
     calls = 0
+    def ensure_ready(self):
+        return None
     def submit(self, image, reference=None):
         self.calls += 1
-        return {'JobId':'remote-job','RequestId':'submit-request'}
-    def describe(self, job_id):
-        return {**RESULT,'RequestId':'query-request'}
+        return ProviderOutcome(state='pending', provider_job_id='remote-job', request_id='submit-request')
+    def get_result(self, job_id):
+        return ProviderOutcome(state='succeeded', result=normalize_result(RESULT),
+                               raw={**RESULT, 'RequestId': 'query-request'}, request_id='query-request')
 
 def test_nested_result_retains_evidence_without_scores():
     result = normalize_result(RESULT)
@@ -27,8 +42,8 @@ def test_nested_result_retains_evidence_without_scores():
 
 def test_marking_auth_ownership_dedup_and_persistence(tmp_path):
     provider=Provider()
-    with client_for(tmp_path) as c:
-        c.app.state.marking_provider=provider
+    with marking_client(tmp_path) as c:
+        use_provider(c, provider)
         auth,exam,file=setup_exam(c)
         body={'examId':exam['examId'],'fileId':file['fileId'],'requestKey':'same-intent'}
         assert c.post('/api/v1/marking/jobs',json=body).status_code==401
@@ -46,8 +61,8 @@ def test_marking_auth_ownership_dedup_and_persistence(tmp_path):
         assert data['status']=='succeeded'
         assert data['source']=='tencent' and data['result']['totalScore'] is None
         assert data['image']['width']==20
-    with client_for(tmp_path) as c:
-        c.app.state.marking_provider=provider
+    with marking_client(tmp_path) as c:
+        use_provider(c, provider)
         assert c.get('/api/v1/marking/jobs/'+job['jobId'],headers=auth).json()['data']['status']=='succeeded'
 
 def test_unknown_submission_is_not_retried(tmp_path):
@@ -56,8 +71,8 @@ def test_unknown_submission_is_not_retried(tmp_path):
             self.calls+=1
             raise TimeoutError('remote acceptance unknown')
     provider=TimeoutProvider()
-    with client_for(tmp_path) as c:
-        c.app.state.marking_provider=provider
+    with marking_client(tmp_path) as c:
+        use_provider(c, provider)
         auth,exam,file=setup_exam(c)
         body={'examId':exam['examId'],'fileId':file['fileId'],'requestKey':'retry-intent'}
         first=c.post('/api/v1/marking/jobs',json=body,headers=auth).json()['data']
