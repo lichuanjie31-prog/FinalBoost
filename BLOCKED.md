@@ -9,15 +9,37 @@
 
 ## 2026-09-19 千问视觉批改：当前阻塞
 
-### 🔴 无可用 DASHSCOPE_API_KEY，真实调用未验收
+### 🔴 DASHSCOPE_API_KEY 被 DashScope 拒绝（401 invalid_api_key）
 
-`.env` 中的 `EMBEDDING_API_KEY` 是模板占位值（`your-alibaba-api-key`），
-`config.real_secret()` 已将其视为未配置。因此：
+配置已就位（`MARKING_MODE=live`、`MARKING_PROVIDER=qwen`、`QWEN_MARKING_MODEL=qwen-vl-max`），
+代码路径已跑通，真实请求到达 DashScope 后被拒：
 
-- **从未向 DashScope 发起过真实请求**；本轮千问验收全部为替换 HTTP 边界的离线验收。
+```
+HTTP 401  {"code": "invalid_api_key", "message": "Incorrect API key provided"}
+request_id: 147486fb-b2ee-9413-957f-b0fc4d0dd881
+```
 
-**需要你操作**：在 `backend/.env` 设置真实的 `DASHSCOPE_API_KEY`（百炼 API Key，`sk-` 开头），
-并把 `MARKING_MODE` 设为 `live`。之后无需改代码。
+应用侧表现正确：任务 `failed`、错误码 `qwen:Unauthorized`、
+`result` 为 `null`、未伪造分数。
+
+**密钥值本身可疑**（未打印密钥内容）：
+
+- 长度 114 字符，含 3 个 `.`，分段长度 `[7, 5, 4, 95]`；
+  而百炼**通用 API Key 形如 `sk-` + 32 字符、无点号**。
+- 国内站 `dashscope.aliyuncs.com` 与新加坡站 `dashscope-intl.aliyuncs.com`
+  **均返回 401**，排除地域隔离。
+- 逐段尝试鉴权：仅最长段（95 字符）可提交，同样 401。
+
+**需要你操作**：到百炼控制台 → API-KEY 管理，重新复制**通用 API Key**
+（`sk-` 开头、约 35 字符、无点号），覆盖 `backend/.env` 的 `DASHSCOPE_API_KEY`。
+若使用的是 Coding Plan 套餐 Key（`sk-sp-` 开头），需配套使用对应的 Coding 端点，
+不能与通用端点混用。
+
+### 另需确认：`QWEN_MARKING_MODEL=qwen-vl-max` 是否支持 `json_schema`
+
+官方文档明确标注支持结构化输出的是 **`qwen3-vl-plus`**；
+`qwen-vl-max` 对 `response_format: json_schema` 的支持未核实。
+密钥恢复后若出现 400，多半是该项，可先切回 `QWEN_MARKING_MODEL=qwen3-vl-plus` 验证。
 
 ### 仍未验收（禁止声称已通过）
 

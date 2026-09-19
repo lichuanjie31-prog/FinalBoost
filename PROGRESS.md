@@ -151,3 +151,54 @@
   → **代码完成，真实 Qwen 调用待 API Key 验收。**
 - 实际批改质量、Token 计费、坐标 bbox 稳定性、跨页大题均未验收。
 - 腾讯云侧仍未开通服务（上一轮结论不变）。
+
+## 2026-09-19 千问真实验收：发现并修复 MARKING_MODE=live 失效缺陷
+
+用户配置 `MARKING_MODE=live` + `MARKING_PROVIDER=qwen` + `QWEN_MARKING_MODEL=qwen-vl-max` 后开始真实验收。
+
+### 🔴 修复：`MARKING_MODE=live` 被静默解析为 disabled
+
+`Settings.resolve_marking()` 只处理了 `fixture` 与旧的 `qwen`/`tencent` 简写，
+**漏了 `live` 分支**，直接落到兜底 `return "disabled"`：
+
+```
+os.environ MARKING_MODE = live
+Settings.marking_mode  = live
+resolve_marking()      = ('disabled', 'qwen')   ← 错误
+```
+
+而 `live` 正是 `.env.example` 与文档推荐用户填的值——即**文档上的用法完全不起作用**，
+且表现为"静默禁用"而非报错。既有测试未覆盖该取值，因此没被发现。
+修复后 `resolve_marking()` 返回 `('live','qwen')`，并新增 8 项真值表参数化测试
+（覆盖 disabled/fixture/live × qwen/tencent 与两种旧简写）锁定。
+另加一项测试：`live` 且无密钥时必须报 `NotConfigured`，不得退化成 `MarkingDisabled`。
+
+### 修复测试的环境依赖性（同类问题）
+
+新增用例暴露出测试会读取开发机 `.env`：`QWEN_MARKING_MODEL=qwen-vl-max`
+使断言 `qwen3-vl-plus` 失败。已在 `qwen_client()` 与浏览器 marking 配置中
+显式钉住 model 与 base_url，使测试不随开发机环境漂移。
+
+### 真实调用结果：**API Key 无效（401 invalid_api_key）**
+
+修复后 readiness 正确为 `ready=true, mode=live, provider=qwen, model=qwen-vl-max`，
+真实请求到达 DashScope 并被拒：
+
+```
+error: {"code": "qwen:Unauthorized", "message": "千问 API Key 无效或已过期，请检查 DASHSCOPE_API_KEY"}
+status: failed | result: None | usage: None | latencyMs: None
+```
+
+**这验证了错误路径是正确的**：真实供应商错误被正确落库、映射为可操作提示、
+`result` 为 `null`、未伪造任何分数。
+
+密钥本身无效，而非配置或代码问题：
+
+- 该值 114 字符、含 3 个 `.`（分段长度 7/5/4/95），
+  而百炼通用 API Key 形如 `sk-` + 32 字符、无点号。
+- legacy 国内站与 `dashscope-intl` 新加坡站**均返回 401**，故非地域隔离问题。
+- 可能需要重新复制密钥；也可能是 Coding Plan 套餐 Key（`sk-sp-`）等类型不匹配。
+
+### 回归
+- 后端 84/84 通过（75 + 8 项真值表 + 1 项 live 无密钥）。
+- 浏览器 14/14 通过。合约 26 路径一致。前端构建与类型同步通过。

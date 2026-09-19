@@ -85,9 +85,15 @@ def dashscope_body(questions, model='qwen3-vl-plus'):
 
 
 def qwen_client(tmp_path, fake, executor=None, **kwargs):
-    """A real app whose qwen provider talks to a faked HTTP boundary, running inline."""
+    """A real app whose qwen provider talks to a faked HTTP boundary, running inline.
+
+    Model and base URL are pinned so the assertions below cannot drift with a
+    developer's .env (Settings reads the environment directly).
+    """
     kwargs.setdefault('marking_mode', 'qwen')
     kwargs.setdefault('dashscope_api_key', API_KEY)
+    kwargs.setdefault('qwen_marking_model', 'qwen3-vl-plus')
+    kwargs.setdefault('dashscope_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1')
     kwargs.setdefault('marking_submit_interval', 0.01)
     kwargs.setdefault('marking_poll_interval', 0.01)
     client = client_for(tmp_path, **kwargs)
@@ -130,6 +136,34 @@ def test_request_uses_the_verified_dashscope_wire_format(tmp_path):
         assert judgements == ['correct', 'incorrect', 'undetermined']
         # No credential is ever placed in the request body.
         assert API_KEY not in json.dumps(body)
+
+
+@pytest.mark.parametrize('mode,provider,expected', [
+    ('disabled', 'qwen', ('disabled', 'qwen')),
+    ('disabled', 'tencent', ('disabled', 'tencent')),
+    ('fixture', 'qwen', ('fixture', 'qwen')),
+    ('fixture', 'tencent', ('fixture', 'tencent')),
+    # `live` is what .env.example recommends; it must not fall through to disabled.
+    ('live', 'qwen', ('live', 'qwen')),
+    ('live', 'tencent', ('live', 'tencent')),
+    # Legacy spelling: the mode names the provider and wins over MARKING_PROVIDER.
+    ('qwen', 'tencent', ('live', 'qwen')),
+    ('tencent', 'qwen', ('live', 'tencent')),
+])
+def test_every_marking_mode_resolves_to_the_right_pair(mode, provider, expected):
+    from app.config import Settings
+    settings = Settings(marking_mode=mode, marking_provider=provider, data_dir='.')
+    assert settings.resolve_marking() == expected
+
+
+def test_live_mode_without_a_key_is_not_silently_disabled(tmp_path, monkeypatch):
+    """MARKING_MODE=live with no key must report NotConfigured, not MarkingDisabled."""
+    for name in ('DASHSCOPE_API_KEY', 'EMBEDDING_API_KEY'):
+        monkeypatch.delenv(name, raising=False)
+    with client_for(tmp_path, marking_mode='live', marking_provider='qwen', dashscope_api_key='') as c:
+        auth, _, _ = setup_exam(c)
+        state = c.get('/api/v1/marking/readiness', headers=auth).json()['data']
+        assert state['mode'] == 'live' and state['reason'] == 'NotConfigured'
 
 
 def test_readiness_reports_the_qwen_provider_and_model(tmp_path):

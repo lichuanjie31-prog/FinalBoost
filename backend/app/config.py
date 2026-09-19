@@ -152,6 +152,8 @@ class Settings:
         """
         if self.marking_mode in ("qwen", "tencent"):
             return "live", self.marking_mode
+        if self.marking_mode == "live":
+            return "live", self.marking_provider
         if self.marking_mode == "fixture":
             return "fixture", self.marking_provider
         return "disabled", self.marking_provider
