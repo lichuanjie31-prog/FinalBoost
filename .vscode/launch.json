@@ -1,0 +1,43 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "前端（React :5173）",
+      "type": "node-terminal",
+      "request": "launch",
+      "command": "npm run dev",
+      "cwd": "${workspaceFolder}/frontend"
+    },
+    {
+      "name": "后端（FastAPI :8000）",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "${workspaceFolder}/backend/.venv/bin/python",
+      "windows": {
+        "python": "${workspaceFolder}/backend/.venv/Scripts/python.exe"
+      },
+      "module": "uvicorn",
+      "args": ["app.main:app", "--host", "127.0.0.1", "--port", "8000", "--reload"],
+      "cwd": "${workspaceFolder}/backend",
+      "envFile": "${workspaceFolder}/backend/.env",
+      "env": { "GRADING_MODE": "mock" },
+      "console": "integratedTerminal",
+      "subProcess": true,
+      "justMyCode": true
+    }
+  ],
+  "compounds": [
+    {
+      "name": "全栈开发（前端 + 后端）",
+      "configurations": ["前端（React :5173）", "后端（FastAPI :8000）"],
+      "stopAll": true,
+      "presentation": { "order": 1 }
+    },
+    {
+      "name": "安装依赖并启动全栈",
+      "preLaunchTask": "安装全部依赖",
+      "configurations": ["前端（React :5173）", "后端（FastAPI :8000）"],
+      "stopAll": true
+    }
+  ]
+}
