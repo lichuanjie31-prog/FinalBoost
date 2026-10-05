@@ -2,6 +2,7 @@
 
 Creates ChatOpenAI instances compatible with DeepSeek/Qwen APIs.
 """
+import openai
 from langchain_openai import ChatOpenAI
 
 
@@ -30,6 +31,29 @@ def create_llm(api_key: str, model: str, base_url: str,
         timeout=timeout,
         max_retries=2,
     )
+
+
+GENERIC_MODEL_FAILURE = "AI 服务暂时不可用，请稍后重试"
+
+
+def describe_model_failure(exc: BaseException) -> str:
+    """Turn a failed model call into something the reader can act on.
+
+    A provider error must not collapse into the generic "服务暂时不可用": a key
+    from one vendor sent to another vendor's base_url raises the same 502 as a
+    real outage, which sends you debugging the wrong layer entirely.
+    """
+    if isinstance(exc, openai.AuthenticationError):
+        return ("AI 服务凭据无效：LLM_API_KEY 与 LLM_BASE_URL 必须来自同一服务商，"
+                "请确认两者是否匹配")
+    if isinstance(exc, openai.RateLimitError):
+        return "AI 服务请求过于频繁或额度不足，请稍后重试"
+    # APITimeoutError subclasses APIConnectionError, so it has to be tested first.
+    if isinstance(exc, openai.APITimeoutError):
+        return "AI 服务响应超时，请稍后重试"
+    if isinstance(exc, openai.APIConnectionError):
+        return "无法连接 AI 服务，请检查网络与 LLM_BASE_URL"
+    return GENERIC_MODEL_FAILURE
 
 
 def create_llm_from_settings(settings) -> ChatOpenAI | None:

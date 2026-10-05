@@ -20,7 +20,7 @@ from ..business import owned
 from ..common import envelope, fail, new_id
 from .schemas import ChatRequest, ChatResponse, SessionOut, MessageOut, ToolCallOut
 from .memory import MemoryManager
-from .llm import create_llm_from_settings
+from .llm import create_llm_from_settings, describe_model_failure
 
 logger = logging.getLogger(__name__)
 
@@ -164,9 +164,9 @@ def agent_chat(body: ChatRequest, request: Request, user=Depends(current_user)):
                 grading_id=body.gradingId,
                 marking_job_ids=body.markingJobIds,
             )
-        except Exception:
+        except Exception as exc:
             logger.exception("Agent turn failed for user %s session %s", user["id"], session_id)
-            fail(502, "AI 服务暂时不可用，请稍后重试")
+            fail(502, describe_model_failure(exc))
             return  # unreachable, keeps type checker happy
 
     # Persist messages using memory manager
