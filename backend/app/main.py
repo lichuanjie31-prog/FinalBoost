@@ -9,11 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from .config import Settings
 from .db import Database
+from .logging_setup import configure_logging
 from .auth import router as auth_router, current_user
 from .common import new_id
 from .business import router as business_router
 from .modules.question_banks.router import router as question_banks_router
 from .training import router as training_router
+from .analysis import router as analysis_router
+from .materials import router as materials_router
 
 from .grading import GradingWorker
 from .training_worker import TrainingWorker
@@ -42,6 +45,13 @@ def build_marking_providers(settings):
 
 
 def create_app(**kwargs):
+    try:
+        configure_logging()
+    except OSError:
+        # File logging is diagnostics only; an unwritable LOG_DIR must never be
+        # the reason the backend refuses to boot.
+        logger.warning("File logging unavailable, continuing with console only",
+                       exc_info=True)
     settings = Settings(**kwargs)
     db = Database(settings.data_dir)
 
@@ -110,7 +120,7 @@ def create_app(**kwargs):
         allow_origins=list(settings.origins),
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "PATCH"],
-        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Requested-With", "X-Service-Token"],
     )
 
     def error_response(status, message, code=None):
@@ -173,6 +183,8 @@ def create_app(**kwargs):
     app.include_router(agent_router)
     app.include_router(question_banks_router)
     app.include_router(training_router)
+    app.include_router(analysis_router)
+    app.include_router(materials_router)
     return app
 
 

@@ -1,9 +1,12 @@
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, ConfigDict
 from ..auth import current_user
-from ..common import envelope
+from ..common import envelope, fail
 from ..schemas import Envelope
-from .models import MarkingInput, MarkingOutput, MarkingPage, MarkingReadiness
+from ..service_auth import service_token_guard
+from .models import (MarkingInput, MarkingOutput, MarkingPage, MarkingReadiness,
+                     MarkingResultOut, normalize_qwen_result)
 from .service import ExamMarkingTool
 
 router = APIRouter(prefix='/api/v1/marking', tags=['marking-tools'])
@@ -43,3 +46,23 @@ def get(job_id: str, request: Request, user=Depends(current_user)):
 def image(job_id: str, request: Request, user=Depends(current_user)):
     return FileResponse(tool(request).image_path(user['id'], job_id), media_type='image/png',
                         headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
+
+
+class NormalizeIn(BaseModel):
+    """平台模型（DuMate 原生多模态 / 百度）输出的结构化 JSON。
+
+    字段名须与 normalize_qwen_result 对齐；多余字段一律忽略，不报错。
+    """
+    model_config = ConfigDict(extra="allow")
+    questions: list[dict] = []
+    subject: str = ""
+
+
+@router.post('/normalize', response_model=Envelope[MarkingResultOut])
+def normalize(body: NormalizeIn, _=Depends(service_token_guard)):
+    """把平台模型的视觉识别结果收敛为统一 Schema，纯规则、不调用任何大模型。"""
+    try:
+        result = normalize_qwen_result(body.model_dump())
+    except ValueError as exc:
+        fail(422, str(exc))
+    return envelope(result)

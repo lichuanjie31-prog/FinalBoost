@@ -207,7 +207,7 @@ def normalize_qwen_result(payload):
         raise ValueError('批改结果结构无效')
     raw_questions = payload.get('questions')
     if not isinstance(raw_questions, list) or not raw_questions:
-        raise ValueError('千问未识别出任何题目，请确认图片清晰且包含题目')
+        raise ValueError('视觉多模态模型未识别出任何题目，请确认图片清晰且包含题目')
     count = 0
     substantive = 0
 
@@ -253,7 +253,7 @@ def normalize_qwen_result(payload):
 
     questions = [question(item, str(i+1)) for i, item in enumerate(raw_questions)]
     if not substantive:
-        raise ValueError('千问返回的题目内容为空，未生成分数')
+        raise ValueError('视觉多模态模型返回的题目内容为空，未生成分数')
     return {'questions': questions, 'angle': 0, 'subject': _text(payload.get('subject')),
         'totalScore': None, 'maxScore': None,
         'coordinateSpace': 'none', 'coordinateAlignmentVerified': False,

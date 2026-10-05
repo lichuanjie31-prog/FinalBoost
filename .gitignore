@@ -4,8 +4,11 @@ frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
 backend/.venv/
+.venv/
+.idea/
 backend/.pytest_cache/
 backend/data/
+backend/logs/
 **/__pycache__/
 .env
 *.sqlite3
