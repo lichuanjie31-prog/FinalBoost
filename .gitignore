@@ -19,3 +19,8 @@ resume-clone/
 .claude/
 .workbuddy/
 *.tsbuildinfo
+
+# 误生成/与本项目无关，不纳入版本控制
+/package-lock.json
+/backend/package-lock.json
+report_work/
