@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "创建后端虚拟环境",
+      "type": "process",
+      "command": "python",
+      "args": ["-m", "venv", ".venv"],
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "problemMatcher": []
+    },
+    {
+      "label": "安装后端依赖",
+      "type": "process",
+      "command": "${workspaceFolder}/backend/.venv/bin/python",
+      "windows": { "command": "${workspaceFolder}/backend/.venv/Scripts/python.exe" },
+      "args": ["-m", "pip", "install", "-r", "requirements.lock"],
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "dependsOn": "创建后端虚拟环境",
+      "problemMatcher": []
+    },
+    {
+      "label": "安装前端依赖",
+      "type": "shell",
+      "command": "npm install",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "problemMatcher": []
+    },
+    {
+      "label": "安装全部依赖",
+      "dependsOn": ["安装后端依赖", "安装前端依赖"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
+    },
+    {
+      "label": "构建前端",
+      "type": "shell",
+      "command": "npm run build",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    }
+  ]
+}
