@@ -44,6 +44,26 @@ DuMate 先识别题目、学生最终答案和参考答案。对识别可靠且�
 
 `verdict` 为 `correct`、`wrong` 或 `uncertain`。接口只检查简短、可解析的表达式等价关系。它不会识别图片，不会推导题目，也不会评估推导步骤。符号系统无法可靠证明结论时返回 `uncertain`。接口不使用数值抽样把表达式判为相等。
 
+## DuMate 连接应用配置
+
+后端同时提供 Streamable HTTP MCP 服务，DuMate 的“连接应用”应连接 MCP 地址，而非上面的 REST API 地址：
+
+- 应用名称：`FinalBoost理科批改工具`
+- 服务端点 URL：`https://dumate.codehive.asia/mcp`
+- 传输协议：`Streamable HTTP`
+- 请求头名称：`X-Service-Token`
+- 请求头值：从 DuMate 安全配置读取的服务级令牌，不要写入技能正文
+
+连接成功后应能看到 `check_answer`、`normalize_marking_result`、`analyze_weak_points`、`generate_practice_pdf` 四个工具。MCP 接口与 REST 接口共用 `SERVICE_TOKEN`。
+
+部署前，在服务器服务使用的 Python 环境安装 MCP SDK：
+
+```bash
+/root/miniconda3/envs/finalboost/bin/python -m pip install 'mcp==1.30.0'
+```
+
+随后拉取包含 MCP 入口的代码并重启 `finalboost.service`。检查 `https://dumate.codehive.asia/mcp` 时，浏览器直接访问出现错误或提示缺少 MCP 请求头属于正常现象；应通过 DuMate 的 MCP 连接器完成握手和工具发现。
+
 ## 第一份技能需要补充的规则
 
 将以下内容加入“独立核算与矛盾指出”之后：

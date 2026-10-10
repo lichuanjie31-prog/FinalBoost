@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -26,6 +26,7 @@ from .marking.provider import TencentMarkingProvider
 from .marking.qwen import QwenMarkingProvider
 from .marking.fixture import FixtureMarkingProvider
 from .marking.service import ExamMarkingTool
+from .mcp_bridge import create_mcp_app, create_mcp_server
 from .agent.router import router as agent_router
 from concurrent.futures import ThreadPoolExecutor
 import logging
@@ -80,23 +81,25 @@ def create_app(**kwargs):
         # mid-flight by a previous run is failed rather than left hanging.
         ExamMarkingTool(db, app.state.marking_providers, settings).reconcile_interrupted()
 
-        worker = GradingWorker(db)
-        if settings.grading_mode == "llm":
-            worker.configure_llm(settings)
-        app.state.worker = worker
-        worker.start()
-        training_worker = TrainingWorker(db)
-        app.state.training_worker = training_worker
-        training_worker.start()
-        try:
-            yield
-        finally:
-            worker.close()
-            training_worker.close()
-            # Tests may replace the pool with None to run providers inline.
-            executor = getattr(app.state, "marking_executor", None)
-            if executor is not None:
-                executor.shutdown(wait=False)
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(app.state.mcp_server.session_manager.run())
+            worker = GradingWorker(db)
+            if settings.grading_mode == "llm":
+                worker.configure_llm(settings)
+            app.state.worker = worker
+            worker.start()
+            training_worker = TrainingWorker(db)
+            app.state.training_worker = training_worker
+            training_worker.start()
+            try:
+                yield
+            finally:
+                worker.close()
+                training_worker.close()
+                # Tests may replace the pool with None to run providers inline.
+                executor = getattr(app.state, "marking_executor", None)
+                if executor is not None:
+                    executor.shutdown(wait=False)
 
     app = FastAPI(
         title="FinalBoost",
@@ -114,6 +117,7 @@ def create_app(**kwargs):
     # a model call never holds the HTTP request open.
     app.state.marking_providers = build_marking_providers(settings)
     app.state.marking_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="marking")
+    app.state.mcp_server = create_mcp_server()
 
     app.add_middleware(
         CORSMiddleware,
@@ -185,6 +189,7 @@ def create_app(**kwargs):
     app.include_router(training_router)
     app.include_router(analysis_router)
     app.include_router(materials_router)
+    app.mount("/mcp", create_mcp_app(app.state.mcp_server))
     return app
 
 
