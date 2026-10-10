@@ -49,7 +49,7 @@ DuMate 先识别题目、学生最终答案和参考答案。对识别可靠且�
 后端同时提供 Streamable HTTP MCP 服务，DuMate 的“连接应用”应连接 MCP 地址，而非上面的 REST API 地址：
 
 - 应用名称：`FinalBoost理科批改工具`
-- 服务端点 URL：`https://dumate.codehive.asia/mcp`
+- 服务端点 URL：`https://dumate.codehive.asia/mcp/`
 - 传输协议：`Streamable HTTP`
 - 请求头名称：`X-Service-Token`
 - 请求头值：从 DuMate 安全配置读取的服务级令牌，不要写入技能正文
