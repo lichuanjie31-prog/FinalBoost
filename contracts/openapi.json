@@ -3607,6 +3607,294 @@
         }
       }
     },
+    "/api/v1/marking/normalize": {
+      "post": {
+        "tags": [
+          "marking-tools"
+        ],
+        "summary": "Normalize",
+        "description": "把平台模型的视觉识别结果收敛为统一 Schema，纯规则、不调用任何大模型。",
+        "operationId": "normalize_api_v1_marking_normalize_post",
+        "parameters": [
+          {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NormalizeIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_MarkingResultOut_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/marking/check-answer": {
+      "post": {
+        "tags": [
+          "marking-tools"
+        ],
+        "summary": "Check Answer",
+        "description": "Compare short symbolic expressions; unsupported cases remain uncertain.",
+        "operationId": "check_answer_api_v1_marking_check_answer_post",
+        "parameters": [
+          {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SymbolicAnswerIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Envelope_SymbolicAnswerOut_"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
     "/api/v1/agent/chat": {
       "post": {
         "tags": [
@@ -8488,6 +8776,288 @@
           }
         }
       }
+    },
+    "/api/v1/analysis/weak-points": {
+      "post": {
+        "tags": [
+          "analysis"
+        ],
+        "summary": "Weak Points",
+        "operationId": "weak_points_api_v1_analysis_weak_points_post",
+        "parameters": [
+          {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WeakPointIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
+    },
+    "/api/v1/materials/pdf": {
+      "post": {
+        "tags": [
+          "materials"
+        ],
+        "summary": "Material Pdf",
+        "operationId": "material_pdf_api_v1_materials_pdf_post",
+        "parameters": [
+          {
+            "name": "X-Service-Token",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "X-Service-Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MaterialPdfIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported Media Type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -9276,6 +9846,33 @@
         ],
         "title": "Envelope[MarkingReadiness]"
       },
+      "Envelope_MarkingResultOut_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code",
+            "default": 0
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/MarkingResultOut"
+          },
+          "requestId": {
+            "type": "string",
+            "title": "Requestid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "requestId"
+        ],
+        "title": "Envelope[MarkingResultOut]"
+      },
       "Envelope_MockExamOut_": {
         "properties": {
           "code": {
@@ -9735,6 +10332,33 @@
           "requestId"
         ],
         "title": "Envelope[SubjectOut]"
+      },
+      "Envelope_SymbolicAnswerOut_": {
+        "properties": {
+          "code": {
+            "type": "integer",
+            "title": "Code",
+            "default": 0
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SymbolicAnswerOut"
+          },
+          "requestId": {
+            "type": "string",
+            "title": "Requestid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "data",
+          "requestId"
+        ],
+        "title": "Envelope[SymbolicAnswerOut]"
       },
       "Envelope_TrainingOut_": {
         "properties": {
@@ -10869,6 +11493,100 @@
         ],
         "title": "MarkingResultOut"
       },
+      "MaterialPdfIn": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title",
+            "default": "专项练习卷"
+          },
+          "course": {
+            "type": "string",
+            "title": "Course",
+            "default": ""
+          },
+          "meta": {
+            "type": "string",
+            "title": "Meta",
+            "default": ""
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialSection"
+            },
+            "type": "array",
+            "title": "Sections",
+            "default": []
+          },
+          "includeAnswers": {
+            "type": "boolean",
+            "title": "Includeanswers",
+            "default": false
+          },
+          "includeAnalysis": {
+            "type": "boolean",
+            "title": "Includeanalysis",
+            "default": false
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "MaterialPdfIn"
+      },
+      "MaterialQuestion": {
+        "properties": {
+          "stem": {
+            "type": "string",
+            "title": "Stem",
+            "default": ""
+          },
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "default": ""
+          },
+          "options": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Options",
+            "default": []
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer",
+            "default": ""
+          },
+          "analysis": {
+            "type": "string",
+            "title": "Analysis",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "MaterialQuestion"
+      },
+      "MaterialSection": {
+        "properties": {
+          "knowledgePoint": {
+            "type": "string",
+            "title": "Knowledgepoint",
+            "default": ""
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/MaterialQuestion"
+            },
+            "type": "array",
+            "title": "Questions",
+            "default": []
+          }
+        },
+        "type": "object",
+        "title": "MaterialSection"
+      },
       "MockExamOut": {
         "properties": {
           "mockExamId": {
@@ -11222,6 +11940,28 @@
           "answer"
         ],
         "title": "MockStudentAnswer"
+      },
+      "NormalizeIn": {
+        "properties": {
+          "questions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Questions",
+            "default": []
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject",
+            "default": ""
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "NormalizeIn",
+        "description": "平台模型（DuMate 原生多模态 / 百度）输出的结构化 JSON。\n\n字段名须与 normalize_qwen_result 对齐；多余字段一律忽略，不报错。"
       },
       "OutlineItem": {
         "properties": {
@@ -12350,6 +13090,58 @@
         ],
         "title": "SubjectOut"
       },
+      "SymbolicAnswerIn": {
+        "properties": {
+          "problem": {
+            "type": "string",
+            "maxLength": 5000,
+            "minLength": 1,
+            "title": "Problem"
+          },
+          "studentAnswer": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Studentanswer"
+          },
+          "referenceAnswer": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Referenceanswer"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "problem",
+          "studentAnswer",
+          "referenceAnswer"
+        ],
+        "title": "SymbolicAnswerIn",
+        "description": "A recognized final expression and an independently checked reference."
+      },
+      "SymbolicAnswerOut": {
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "correct",
+              "wrong",
+              "uncertain"
+            ],
+            "title": "Verdict"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verdict",
+          "reason"
+        ],
+        "title": "SymbolicAnswerOut"
+      },
       "TrainingIn": {
         "properties": {
           "examId": {
@@ -12510,6 +13302,28 @@
           "name"
         ],
         "title": "WeakPoint"
+      },
+      "WeakPointIn": {
+        "properties": {
+          "questions": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Questions",
+            "default": []
+          },
+          "threshold": {
+            "type": "number",
+            "title": "Threshold",
+            "default": 0.8
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "WeakPointIn",
+        "description": "归一化后的批改结果；questions 即 MarkingResultOut.questions。"
       }
     },
     "securitySchemes": {

@@ -1,6 +1,8 @@
+from typing import Literal
+
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from ..auth import current_user
 from ..common import envelope, fail
 from ..schemas import Envelope
@@ -8,6 +10,7 @@ from ..service_auth import service_token_guard
 from .models import (MarkingInput, MarkingOutput, MarkingPage, MarkingReadiness,
                      MarkingResultOut, normalize_qwen_result)
 from .service import ExamMarkingTool
+from .symbolic import check_answer as check_symbolic_answer
 
 router = APIRouter(prefix='/api/v1/marking', tags=['marking-tools'])
 
@@ -58,6 +61,19 @@ class NormalizeIn(BaseModel):
     subject: str = ""
 
 
+class SymbolicAnswerIn(BaseModel):
+    """A recognized final expression and an independently checked reference."""
+    model_config = ConfigDict(extra="forbid")
+    problem: str = Field(min_length=1, max_length=5000)
+    studentAnswer: str = Field(max_length=512)
+    referenceAnswer: str = Field(max_length=512)
+
+
+class SymbolicAnswerOut(BaseModel):
+    verdict: Literal["correct", "wrong", "uncertain"]
+    reason: str
+
+
 @router.post('/normalize', response_model=Envelope[MarkingResultOut])
 def normalize(body: NormalizeIn, _=Depends(service_token_guard)):
     """把平台模型的视觉识别结果收敛为统一 Schema，纯规则、不调用任何大模型。"""
@@ -66,3 +82,9 @@ def normalize(body: NormalizeIn, _=Depends(service_token_guard)):
     except ValueError as exc:
         fail(422, str(exc))
     return envelope(result)
+
+
+@router.post('/check-answer', response_model=Envelope[SymbolicAnswerOut])
+def check_answer(body: SymbolicAnswerIn, _=Depends(service_token_guard)):
+    """Compare short symbolic expressions; unsupported cases remain uncertain."""
+    return envelope(check_symbolic_answer(body.problem, body.studentAnswer, body.referenceAnswer))

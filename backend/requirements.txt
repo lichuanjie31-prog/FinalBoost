@@ -22,6 +22,7 @@ pydantic>=2.13.0
 python-multipart>=0.0.32
 pillow>=12.0.0
 python-dotenv>=1.0
+sympy>=1.12,<2
 
 # Windows has no system tz database: `ZoneInfo("Asia/Shanghai")` in app/business.py
 # raises ZoneInfoNotFoundError without this package, so it is a real runtime dep.
