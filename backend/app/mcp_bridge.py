@@ -95,6 +95,10 @@ def _wait_for_process(process, send, receive, timeout,
         _, succeeded, result = state
         if not succeeded:
             name, message = result
+            if name in {"TypeError", "ValueError", "ValidationError"}:
+                raise ValueError("isolated worker returned invalid data")
+            if name == "TimeoutError":
+                raise TimeoutError("isolated worker operation timed out")
             raise RuntimeError(f"{name}: {message}")
         return result
     finally:
@@ -133,11 +137,21 @@ def _generate_variation_payload(sourceQuestion, sourceKnowledgePoint, model=None
     """Return JSON-ready variation results; model injection supports local tests."""
     if model is None:
         model = create_llm_from_settings(Settings())
+    if model is None:
+        return _tool_error("SERVICE_DEGRADED", "变式题生成模型未配置", can_retry=True)
     result = generate_variations(model, sourceQuestion, sourceKnowledgePoint)
-    return {
+    payload = {
         "questions": [item.model_dump(mode="json") for item in result["questions"]],
         "warnings": result["warnings"],
     }
+    if not any(item.validation_status == "passed" for item in result["questions"]):
+        failure_codes = set(result.get("failure_codes", {}).values())
+        if "TIMEOUT" in failure_codes:
+            return _tool_error("TIMEOUT", "变式题生成模型响应超时", True, payload)
+        if "SERVICE_DEGRADED" in failure_codes:
+            return _tool_error("SERVICE_DEGRADED", "变式题生成模型暂时不可用", True, payload)
+        return _tool_error("PARSE_FAILED", "变式题均未通过校验，需人工复核", fallback_payload=payload)
+    return payload
 
 
 def service_token_matches(supplied: str, expected: str) -> bool:

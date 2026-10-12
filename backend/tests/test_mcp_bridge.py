@@ -22,6 +22,12 @@ def _delayed_start_child(send_conn):
     send_conn.close()
 
 
+def _invalid_data_child(send_conn):
+    send_conn.send(("ready", None))
+    send_conn.send(("result", False, ("ValueError", "private invalid data")))
+    send_conn.close()
+
+
 def test_mcp_server_exposes_the_workflow_tools():
     server = create_mcp_server()
     tools = server._tool_manager.list_tools()
@@ -299,3 +305,165 @@ def test_mcp_pdf_timeout_keeps_a_usable_markdown_paper(monkeypatch):
     assert result["fallback_payload"]["mimeType"] == "text/markdown"
     assert "1+1=?" in result["fallback_payload"]["markdown"]
     assert "答案：" not in result["fallback_payload"]["markdown"]
+
+
+@pytest.mark.parametrize("questions", [
+    [{"children": [{}] * 500}],
+    [{"answers": [{}] * 2001}],
+    [{"questionId": "q1", "answers": [{"errorReason": "x" * 1_000_001}]}],
+])
+def test_mcp_diagnosis_bounds_the_complete_payload(questions):
+    result = create_mcp_server()._tool_manager.get_tool("analyze_four_dimension_diagnosis").fn(
+        questions=questions)
+    assert result["error_code"] == "RESOURCE_LIMIT"
+
+
+def test_http_mcp_discovers_and_calls_the_integrated_tools(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.tool_contracts import DimensionDiagnosis
+    import json
+
+    monkeypatch.setenv("SERVICE_TOKEN", "local-integration-token")
+    monkeypatch.setenv("MCP_ALLOWED_HOSTS", "testserver,testserver:*")
+    app = create_app(data_dir=tmp_path, grading_mode="mock", rag_enabled=False)
+    headers = {
+        "X-Service-Token": "local-integration-token",
+        "Accept": "application/json, text/event-stream",
+    }
+    with TestClient(app) as client:
+        assert client.get("/api/v1/health").status_code == 200
+        request_id = 0
+
+        def rpc(method, params=None):
+            nonlocal request_id
+            request_id += 1
+            response = client.post("/mcp/", headers=headers, json={
+                "jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {},
+            })
+            assert response.status_code == 200, response.text
+            body = response.json()
+            assert "error" not in body, body
+            return body["result"]
+
+        initialized = rpc("initialize", {
+            "protocolVersion": "2025-11-25", "capabilities": {},
+            "clientInfo": {"name": "integration-test", "version": "1"},
+        })
+        assert initialized["serverInfo"]["name"] == "FinalBoost"
+        headers["MCP-Protocol-Version"] = initialized["protocolVersion"]
+        tools = rpc("tools/list")["tools"]
+        assert {tool["name"] for tool in tools} == {
+            tool.name for tool in app.state.mcp_server._tool_manager.list_tools()}
+        assert len(tools) == 6
+        by_name = {tool["name"]: tool for tool in tools}
+        assert by_name["analyze_four_dimension_diagnosis"]["inputSchema"]["required"] == ["questions"]
+        assert by_name["generate_variation_questions"]["inputSchema"]["required"] == [
+            "sourceQuestion", "sourceKnowledgePoint"]
+
+        def call(name, arguments):
+            result = rpc("tools/call", {"name": name, "arguments": arguments})
+            assert result.get("isError") is not True, result
+            assert result["content"][0]["type"] == "text"
+            return json.loads(result["content"][0]["text"])
+
+        marking = call("normalize_marking_result", {"questions": [{
+            "question_text": "化简 2x+3x", "student_answer": "6x", "judgement": "incorrect",
+            "error_reason": "代数计算错误", "knowledge_points": ["整式运算"],
+        }]})
+        diagnosis = call("analyze_four_dimension_diagnosis", {"questions": marking["questions"]})
+        for item in diagnosis["dimensions"]:
+            DimensionDiagnosis.model_validate(item)
+        assert diagnosis["dimensions"][1]["evidence_question_ids"] == ["1"]
+        weak = call("analyze_weak_points", {"questions": marking["questions"]})
+        assert weak["weakPoints"][0]["questionIds"] == ["1"]
+        verdict = call("check_answer", {
+            "problem": "比较集合", "studentAnswer": "{1,2}", "referenceAnswer": "{2,1}",
+        })
+        assert verdict["verdict"] == "correct"
+        invalid = call("analyze_four_dimension_diagnosis", {"questions": [{"answers": "bad"}]})
+        assert invalid["error_code"] == "PARSE_FAILED"
+
+        def timeout(*args):
+            raise TimeoutError("private worker timeout")
+        monkeypatch.setattr(mcp_bridge, "_run_isolated", timeout)
+        fallback = call("generate_practice_pdf", {"sections": [{"questions": [{"stem": "1+1=?"}]}]})
+        assert fallback["error_code"] == "TIMEOUT"
+        assert "1+1=?" in fallback["fallback_payload"]["markdown"]
+        variation = call("generate_variation_questions", {
+            "sourceQuestion": "解方程 x+1=3", "sourceKnowledgePoint": "一元一次方程",
+        })
+        assert variation["error_code"] == "TIMEOUT"
+        assert "private" not in str(variation)
+
+        from test_variation_generation import SequenceModel, payload
+        model = SequenceModel([
+            payload("consolidation", "解一元一次方程 x+1=3"),
+            payload("reverse", "一元一次方程已知解为 2，求未知常数"),
+            payload("extension", "一元一次方程应用，已知 x=2，求另一个量"),
+        ])
+
+        def generate_locally(operation, arguments, seconds):
+            assert operation == "generate_variations"
+            return mcp_bridge._generate_variation_payload(**arguments, model=model)
+
+        monkeypatch.setattr(mcp_bridge, "_run_isolated", generate_locally)
+        generated = call("generate_variation_questions", {
+            "sourceQuestion": "解方程 x+1=3", "sourceKnowledgePoint": "一元一次方程",
+        })
+        assert [item["tier"] for item in generated["questions"]] == ["consolidation", "reverse", "extension"]
+        assert all(item["validation_status"] == "passed" for item in generated["questions"])
+
+        rejected = client.post("/mcp/", headers={"Accept": headers["Accept"]}, json={
+            "jsonrpc": "2.0", "id": 99, "method": "tools/list"})
+        assert rejected.status_code == 401
+
+
+def test_isolated_worker_preserves_parse_failure_semantics():
+    context = multiprocessing.get_context("spawn")
+    receive, send = context.Pipe(duplex=False)
+    process = context.Process(target=_invalid_data_child, args=(send,))
+    try:
+        with pytest.raises(ValueError, match="invalid data"):
+            mcp_bridge._wait_for_process(process, send, receive, timeout=15)
+    finally:
+        send.close()
+
+
+def test_variation_missing_model_returns_explicit_service_error(monkeypatch):
+    monkeypatch.setattr(mcp_bridge, "create_llm_from_settings", lambda _: None)
+    result = mcp_bridge._generate_variation_payload("解方程 x+1=3", "一元一次方程")
+    assert result["error_code"] == "SERVICE_DEGRADED"
+    assert result["is_error"] is True
+
+
+def test_variation_invalid_generated_questions_are_an_explicit_parse_error():
+    from test_variation_generation import SequenceModel
+    result = mcp_bridge._generate_variation_payload(
+        "解方程 x+1=3", "一元一次方程", model=SequenceModel(["invalid"] * 6))
+    assert result["error_code"] == "PARSE_FAILED"
+    assert all(question["validation_status"] == "failed"
+               for question in result["fallback_payload"]["questions"])
+
+
+@pytest.mark.parametrize("exception,code", [
+    (RuntimeError("private provider failure"), "SERVICE_DEGRADED"),
+    (TimeoutError("private provider timeout"), "TIMEOUT"),
+])
+def test_variation_provider_failure_keeps_its_business_error(exception, code):
+    from test_variation_generation import SequenceModel
+    result = mcp_bridge._generate_variation_payload(
+        "解方程 x+1=3", "一元一次方程", model=SequenceModel([exception] * 6))
+    assert result["error_code"] == code
+    assert result["can_retry"] is True
+    assert "private" not in str(result)
+
+
+def test_variation_openai_timeout_keeps_the_timeout_error():
+    import httpx
+    from openai import APITimeoutError
+    from test_variation_generation import SequenceModel
+    timeout = APITimeoutError(request=httpx.Request("POST", "https://example.test"))
+    result = mcp_bridge._generate_variation_payload(
+        "解方程 x+1=3", "一元一次方程", model=SequenceModel([timeout] * 6))
+    assert result["error_code"] == "TIMEOUT"
+    assert "example.test" not in str(result)

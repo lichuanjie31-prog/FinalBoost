@@ -17,6 +17,12 @@ description: 面向高中理科试卷的互动式诊断、逐题讲解、微型�
 - 微型检验题只在对话中呈现，不调用 `generate_practice_pdf` 代替检验题，也不声称已生成文件。
 - 工具调用遵循已配置的 MCP 工具定义。不得在本文件写入 Base URL、Auth Token 或其他凭证。
 
+## 讲评前核验
+
+收到试卷或学生作答后，先核对可辨认的题干、学生答案与参考依据，再选择当前题。对于支持的数学表达式，调用 `check_answer` 核验最终答案，然后依据核验结果解释当前题。`uncertain` 需要继续核实，不能直接宣布答错或通关。证明和推导过程仍需逐步核验。
+
+需要整理视觉判读结果时，调用 `normalize_marking_result`。可在后台整理整卷，但对学生只展示当前一道题的作答、判定与讲解，不批量输出其他题目的答案。没有可靠参考依据时，标注待核实并请求补充。
+
 ## 会话状态
 
 在 DuMate 可用的会话元数据中显式维护 `stage` 与 `checkpoint_status`，每轮处理前先读取并更新：
@@ -87,9 +93,9 @@ description: 面向高中理科试卷的互动式诊断、逐题讲解、微型�
 
 调用 MCP 工具时，按 `backend/app/tool_contracts.py` 中的 `MCPToolError` 契约识别 `error_code`。出现 `SERVICE_DEGRADED`，或明确的生成超时、`TIMEOUT` 时，不要把错误当作成功结果，也不要重复声称工具已完成。
 
-如果当前关卡需要微型检验，立即使用以下提示继续闭环：“系统正在后台加急排版，老师先在屏幕上为你出这道进阶题”。随后直接在对话中给出一道基于已确认题目和推导、答案可可靠核验的微型题，设为 `checkpoint_pending` 与 `pending`，等待学生作答。不能可靠构造或核验时，说明限制并请学生补充信息，保持未通关状态。
+如果当前关卡需要微型检验，立即使用以下提示继续闭环：“老师先在屏幕上为你出这道巩固题”。随后直接在对话中给出一道基于已确认题目和推导、答案可可靠核验的微型题，设为 `checkpoint_pending` 与 `pending`，等待学生作答。不能可靠构造或核验时，说明限制并请学生补充信息，保持未通关状态。
 
-工具返回的 `fallback_payload` 只作为错误处理信息使用。除非实际收到并核验成功结果，否则不得据此声称 PDF、分析或其他资源已经生成。
+工具返回的 `fallback_payload` 必须按其实际内容处理。PDF 超时或失败时，如果其中包含 `mimeType=text/markdown` 和非空 `markdown`，可以展示 Markdown 题卷，并明确 PDF 未完成。其他错误载荷中的失败题目不能作为有效练习交付。不得声称后台仍在排版，也不得声称 PDF 已生成。
 
 ## MCP 工具调用时机
 
@@ -99,5 +105,24 @@ description: 面向高中理科试卷的互动式诊断、逐题讲解、微型�
 | `normalize_marking_result` | 有可靠的逐题判读结果时 | 不把待核实项目改成确定结论。 |
 | `analyze_weak_points` | 学生完成本关并提出总结或需要整体复习时 | 只依据已确认的作答证据，不影响当前检验题判定。 |
 | `generate_practice_pdf` | 学生通关后明确要求可下载的专项练习卷时 | 微型检验题直接在对话中给出。工具失败或超时须按降级规则继续，不得谎称交付。 |
+| `generate_variation_questions` | 学生需要微型巩固题或通关后请求变式练习时 | 仅选择 `validation_status=passed` 的一道题展示，隐藏 `answer` 和 `analysis`，等待学生作答。失败题目不能交付。 |
+| `analyze_four_dimension_diagnosis` | 学生通关后请求学情总结时 | 只输入已确认的归一化证据，保留题号与原因；`insufficient_evidence` 不转换为评分或能力结论。 |
 
-符号校验只适用于其支持的短表达式。方程、解集、概率分布、单位、证明过程、图片识别和步骤评分不在校验范围内。遇到这些内容时跳过接口，或接受 `uncertain` 后继续可靠的人工分析。
+## MCP 参数与结果
+
+以下名称与后端 FastMCP 注册定义一致，按工具发现返回的 JSON Schema 调用：
+
+- `check_answer(problem, studentAnswer, referenceAnswer)`：三个参数均为文本。结果包含 `verdict` 与 `reason`，`verdict` 为 `correct`、`wrong` 或 `uncertain`。`correct` 仍不能证明完整推导有效。
+- `normalize_marking_result(questions, subject="")`：`questions` 为视觉判读字典数组，使用 `question_text`、`student_answer`、`correct_answer`、`judgement`、`analysis`、`error_reason`、`knowledge_points`，可包含 `children`。`judgement` 使用 `correct`、`incorrect` 或 `uncertain`。返回的 `questions` 含 `questionId`、`answers`、`children`；`answers` 中的 `correct` 为布尔值或空值。不得把已归一化结果再次当作视觉输入传入。
+- `analyze_weak_points(questions, threshold=0.8)`：传入上述归一化 `questions`，返回 `threshold` 与 `weakPoints`。待核实答案不计为错题。
+- `analyze_four_dimension_diagnosis(questions)`：传入上述归一化 `questions`，返回 `dimensions` 与 `markdown`。四项分别是知识记忆、代数运算、图形与几何、逻辑推理；维度标识分别为 `knowledge_memory`、`algebraic_operation`、`graphical_combination`、`logical_reasoning`。每项含 `level`、`evidence_count`、`evidence_question_ids`、`reason`，证据不足时为 `insufficient_evidence`。
+- `generate_variation_questions(sourceQuestion, sourceKnowledgePoint)`：两个参数均为文本，返回 `questions` 与 `warnings`；三个梯次标识为 `consolidation`、`reverse`、`extension`。每题包含 `tier`、`source_knowledge_point`、`difficulty`、`stem`、`options`、`answer`、`analysis`、`validation_status`。调用后仍一次只展示一道题。
+- `generate_practice_pdf(sections, title="专项练习卷", course="", meta="", includeAnswers=False, includeAnalysis=False)`：`sections` 是含 `knowledgePoint` 与 `questions` 的数组，每题使用 `stem`、`options`、`answer`、`analysis`。如把变式题转换为题卷，按 `source_knowledge_point` 分组为 `knowledgePoint`，仅选择通过校验的题目。返回 `filename`、`mimeType`、`base64`，没有下载 URL。只有 DuMate 实际保存并提供附件后，才能提供该附件的真实下载信息。
+
+所有工具的业务错误均按 `is_error=true`、`error_code`、`message`、`can_retry`、`fallback_payload` 处理。错误代码为 `TIMEOUT`、`PARSE_FAILED`、`RESOURCE_LIMIT` 或 `SERVICE_DEGRADED`，正常的 `uncertain` 判题结果不属于服务失败。
+
+符号校验支持短表达式、有限集合和一维区间，并对纯数值使用容差；含变量表达式仍要求代数等价。复杂方程、带条件的解集、概率分布、单位换算、证明过程、图片识别和步骤评分需另行核实。遇到超出支持范围的内容时保留 `uncertain`，继续可靠的人工分析。
+
+## 本地集成与部署边界
+
+此文件合并到仓库只代表本地 Skill 就绪。部署前需在百度 DuMate 单独导入或更新 Skill，配置已验证的 MCP 连接，再用真实学生对话验收逐题、自评、强制微型检验和答对后通关流程。本文件不声明 DuMate 线上部署已完成。

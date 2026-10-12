@@ -3,6 +3,7 @@ import json
 import re
 
 from pydantic import ValidationError
+from openai import APITimeoutError
 
 from ..tool_contracts import VariationQuestion
 from .question_validator import validate_variations, validation_reason
@@ -44,12 +45,26 @@ def generate_variation_questions(llm_client, source_question: str,
         return {"questions": [], "warnings": ["原题和原始考点均为必填项"]}
 
     generated = []
+    provider_errors = {}
+
+    def invoke(prompt, tier):
+        try:
+            response = llm_client.invoke(prompt)
+        except (TimeoutError, APITimeoutError):
+            provider_errors[tier] = "TIMEOUT"
+            raise
+        except Exception:
+            provider_errors[tier] = "SERVICE_DEGRADED"
+            raise
+        provider_errors.pop(tier, None)
+        return response
+
     for tier, label, direction in _TIERS:
         candidate = None
         try:
-            response = llm_client.invoke(_prompt(
+            response = invoke(_prompt(
                 tier, label, direction, source_question, source_knowledge_point,
-            ))
+            ), tier)
             candidate = _parse_question(response.content, tier, source_knowledge_point)
         except Exception:
             # Provider and parse failures are retried once through the same
@@ -73,10 +88,10 @@ def generate_variation_questions(llm_client, source_question: str,
             continue
         tier, label, direction = _TIERS[index]
         try:
-            response = llm_client.invoke(_prompt(
+            response = invoke(_prompt(
                 tier, label, direction, source_question, source_knowledge_point,
                 validation_reason(item),
-            ))
+            ), tier)
             generated[index] = _parse_question(response.content, tier, source_knowledge_point)
         except Exception:
             # Keep the existing failed item as an auditable warning.
@@ -86,4 +101,7 @@ def generate_variation_questions(llm_client, source_question: str,
     for item in generated:
         if item.validation_status == "failed":
             warnings.append(f"{item.tier} 梯次未通过校验，需人工复核")
-    return {"questions": generated, "warnings": warnings}
+    return {"questions": generated, "warnings": warnings, "failure_codes": {
+        item.tier: provider_errors.get(item.tier, "PARSE_FAILED")
+        for item in generated if item.validation_status == "failed"
+    }}
