@@ -2,8 +2,11 @@
 import base64
 import hmac
 import json
+import multiprocessing
 import os
 import tempfile
+import time
+from pydantic import ValidationError
 
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
@@ -15,6 +18,87 @@ from .materials import MaterialPdfIn, _normalize_options
 from .marking.models import normalize_qwen_result
 from .pdf import render_training_pdf
 from .marking.symbolic import check_answer as compare_answers
+from .tool_contracts import MCPToolError
+
+
+CHECK_ANSWER_TIMEOUT_SECONDS = 3
+PDF_RENDER_TIMEOUT_SECONDS = 15
+MAX_PDF_QUESTIONS = 500
+MAX_PDF_TEXT_CHARS = 1_000_000
+MAX_PDF_BYTES = 10_000_000
+
+
+def _isolated_tool_worker(send_conn, operation, arguments):
+    """Run potentially unbounded CPU work in a process the caller can stop."""
+    try:
+        if operation == "check_answer":
+            result = compare_answers(**arguments)
+        else:
+            render_training_pdf(**arguments)
+            result = None
+        send_conn.send((True, result))
+    except Exception as exc:
+        send_conn.send((False, (type(exc).__name__, str(exc))))
+    finally:
+        send_conn.close()
+
+
+def _run_isolated(operation, arguments, timeout):
+    context = multiprocessing.get_context("spawn")
+    receive, send = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_isolated_tool_worker,
+        args=(send, operation, arguments),
+        daemon=True,
+    )
+    return _wait_for_process(process, send, receive, timeout)
+
+
+def _wait_for_process(process, send, receive, timeout):
+    deadline = time.monotonic() + timeout
+    process.start()
+    send.close()
+    try:
+        if not receive.poll(max(0, deadline - time.monotonic())):
+            process.terminate()
+            process.join()
+            raise TimeoutError(f"operation exceeded {timeout} seconds")
+        succeeded, result = receive.recv()
+        process.join()
+        if not succeeded:
+            name, message = result
+            raise RuntimeError(f"{name}: {message}")
+        return result
+    finally:
+        receive.close()
+        if process.is_alive():
+            process.terminate()
+            process.join()
+
+
+def _tool_error(code, message, can_retry=False, fallback_payload=None):
+    return MCPToolError(
+        error_code=code,
+        message=message,
+        can_retry=can_retry,
+        fallback_payload=fallback_payload,
+    ).model_dump()
+
+
+def _markdown_paper(body):
+    lines = [f"# {body.title or '专项练习卷'}", "", body.meta or body.course or ""]
+    for section in body.sections:
+        lines.extend(["", f"## {section.knowledgePoint or body.course or '专项'}", ""])
+        for index, question in enumerate(section.questions, 1):
+            lines.extend([f"### 第 {index} 题", "", question.stem])
+            for option in _normalize_options(question.options):
+                lines.append(f"{option['key']}. {option['text']}")
+            if body.includeAnswers and question.answer:
+                lines.extend(["", f"答案：{question.answer}"])
+            if body.includeAnalysis and question.analysis:
+                lines.extend(["", f"解析：{question.analysis}"])
+            lines.append("")
+    return "\n".join(lines).strip() + "\n"
 
 
 def service_token_matches(supplied: str, expected: str) -> bool:
@@ -74,22 +158,42 @@ def create_mcp_server() -> FastMCP:
     @server.tool()
     def check_answer(problem: str, studentAnswer: str, referenceAnswer: str) -> dict:
         """Compare a student's short final expression with a verified reference."""
-        return compare_answers(problem, studentAnswer, referenceAnswer)
+        try:
+            return _run_isolated(
+                "check_answer",
+                {"problem": problem, "student_answer": studentAnswer,
+                 "reference_answer": referenceAnswer},
+                CHECK_ANSWER_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            return _tool_error("TIMEOUT", "答案校验超过 3 秒", can_retry=True)
+        except Exception:
+            return _tool_error("SERVICE_DEGRADED", "答案校验服务暂时不可用", can_retry=True)
 
     @server.tool()
     def normalize_marking_result(questions: list[dict], subject: str = "") -> dict:
         """Normalize recognized exam answers into FinalBoost's tri-state schema."""
-        return normalize_qwen_result({"questions": questions, "subject": subject})
+        try:
+            return normalize_qwen_result({"questions": questions, "subject": subject})
+        except (TypeError, ValueError, ValidationError):
+            return _tool_error("PARSE_FAILED", "批改数据格式无效", can_retry=False)
+        except Exception:
+            return _tool_error("SERVICE_DEGRADED", "批改归一化服务暂时不可用", can_retry=True)
 
     @server.tool()
     def analyze_weak_points(questions: list[dict], threshold: float = 0.8) -> dict:
         """Aggregate normalized answers by knowledge point and sort by accuracy."""
-        if len(questions) > 500:
-            raise ValueError("题目数量异常")
-        return {
-            "threshold": threshold,
-            "weakPoints": collect_weak_points(questions, threshold),
-        }
+        if len(questions) > MAX_PDF_QUESTIONS:
+            return _tool_error("RESOURCE_LIMIT", "题目数量超过 500 道", can_retry=False)
+        try:
+            return {
+                "threshold": threshold,
+                "weakPoints": collect_weak_points(questions, threshold),
+            }
+        except (TypeError, ValueError):
+            return _tool_error("PARSE_FAILED", "薄弱点数据格式无效", can_retry=False)
+        except Exception:
+            return _tool_error("SERVICE_DEGRADED", "薄弱点分析服务暂时不可用", can_retry=True)
 
     @server.tool()
     def generate_practice_pdf(
@@ -101,17 +205,25 @@ def create_mcp_server() -> FastMCP:
         includeAnalysis: bool = False,
     ) -> dict:
         """Render a practice paper and return its PDF as base64 for DuMate."""
-        body = MaterialPdfIn(
-            sections=sections,
-            title=title,
-            course=course,
-            meta=meta,
-            includeAnswers=includeAnswers,
-            includeAnalysis=includeAnalysis,
-        )
+        raw_size = len(json.dumps(sections, ensure_ascii=False, default=str))
+        if raw_size > MAX_PDF_TEXT_CHARS:
+            return _tool_error("RESOURCE_LIMIT", "题卷文本超过 1 MB 限制", can_retry=False)
+        try:
+            body = MaterialPdfIn(
+                sections=sections,
+                title=title,
+                course=course,
+                meta=meta,
+                includeAnswers=includeAnswers,
+                includeAnalysis=includeAnalysis,
+            )
+        except (ValidationError, TypeError, ValueError):
+            return _tool_error("PARSE_FAILED", "题卷数据格式无效", can_retry=False)
         total = sum(len(section.questions) for section in body.sections)
         if total == 0:
-            raise ValueError("专项卷没有任何题目")
+            return _tool_error("PARSE_FAILED", "专项卷没有任何题目", can_retry=False)
+        if total > MAX_PDF_QUESTIONS:
+            return _tool_error("RESOURCE_LIMIT", "题目数量超过 500 道", can_retry=False)
 
         groups = []
         for section in body.sections:
@@ -131,16 +243,35 @@ def create_mcp_server() -> FastMCP:
         try:
             with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as handle:
                 path = handle.name
-            render_training_pdf(
-                path,
-                body.title,
-                body.meta or f"{body.course} · 共 {total} 题",
-                groups,
-                include_answers=body.includeAnswers,
-                include_analysis=body.includeAnalysis,
-            )
+            render_args = {
+                "path": path,
+                "title": body.title,
+                "meta": body.meta or f"{body.course} · 共 {total} 题",
+                "groups": groups,
+                "include_answers": body.includeAnswers,
+                "include_analysis": body.includeAnalysis,
+            }
+            try:
+                _run_isolated("render_pdf", render_args, PDF_RENDER_TIMEOUT_SECONDS)
+            except TimeoutError:
+                fallback = {
+                    "filename": f"{body.title or '专项练习卷'}.md",
+                    "mimeType": "text/markdown",
+                    "markdown": _markdown_paper(body),
+                }
+                return _tool_error("TIMEOUT", "PDF 渲染超过 15 秒，已提供 Markdown 题卷", True, fallback)
+            except Exception:
+                fallback = {
+                    "filename": f"{body.title or '专项练习卷'}.md",
+                    "mimeType": "text/markdown",
+                    "markdown": _markdown_paper(body),
+                }
+                return _tool_error("SERVICE_DEGRADED", "PDF 渲染失败，已提供 Markdown 题卷", True, fallback)
             with open(path, "rb") as pdf_file:
-                encoded = base64.b64encode(pdf_file.read()).decode("ascii")
+                pdf_bytes = pdf_file.read(MAX_PDF_BYTES + 1)
+            if len(pdf_bytes) > MAX_PDF_BYTES:
+                return _tool_error("RESOURCE_LIMIT", "生成的 PDF 超过 10 MB 限制", can_retry=False)
+            encoded = base64.b64encode(pdf_bytes).decode("ascii")
             return {"filename": filename, "mimeType": "application/pdf", "base64": encoded}
         finally:
             if path and os.path.exists(path):
