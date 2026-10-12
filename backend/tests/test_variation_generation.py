@@ -54,8 +54,24 @@ def test_failed_validation_gets_one_targeted_retry_then_warning():
     result = generate_variation_questions(model, "解方程 x+1=3", "一元一次方程")
 
     assert result["questions"][1].validation_status == "failed"
-    assert "reverse" in result["warnings"]
+    assert any(warning.startswith("reverse ") for warning in result["warnings"])
     assert len(model.prompts) == 5
+
+
+def test_targeted_retry_can_repair_drift_and_clear_warning():
+    model = SequenceModel([
+        payload("consolidation", "解方程 x+1=3"),
+        payload("reverse", "计算三角形面积"),
+        payload("extension", "一元一次方程应用：已知 x=2，求 x+1"),
+        payload("reverse", "已知一元一次方程的解为 2，求另一个方程的系数"),
+    ])
+
+    result = generate_variation_questions(model, "解方程 x+1=3", "一元一次方程")
+
+    assert result["questions"][1].validation_status == "passed"
+    assert result["warnings"] == []
+    assert len(model.prompts) == 4
+    assert "针对上次校验问题修正" in model.prompts[3]
 
 
 def test_invalid_model_json_retries_once_and_stays_failed():
@@ -67,7 +83,7 @@ def test_invalid_model_json_retries_once_and_stays_failed():
     result = generate_variation_questions(model, "解方程 x+1=3", "一元一次方程")
 
     assert result["questions"][0].validation_status == "failed"
-    assert "consolidation" in result["warnings"]
+    assert any(warning.startswith("consolidation ") for warning in result["warnings"])
 
 
 def test_provider_failure_is_retried_and_reported_without_fabrication():
@@ -78,7 +94,7 @@ def test_provider_failure_is_retried_and_reported_without_fabrication():
     result = generate_variation_questions(model, "解方程 x+1=3", "一元一次方程")
 
     assert result["questions"][0].validation_status == "failed"
-    assert "consolidation" in result["warnings"]
+    assert any(warning.startswith("consolidation ") for warning in result["warnings"])
 
 
 def test_missing_model_does_not_fabricate_questions():

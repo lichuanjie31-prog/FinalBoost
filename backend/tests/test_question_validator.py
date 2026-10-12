@@ -14,7 +14,7 @@ def question(tier, stem, answer="x=2", analysis="最终答案：x=2"):
 
 
 def test_explicit_conflicting_final_answer_fails_self_consistency():
-    item = question("consolidation", "解方程 x+1=3", analysis="最终答案：x=4")
+    item = question("consolidation", "计算 2+2", answer="2", analysis="最终答案：4")
 
     checked = validate_variations([item])[0]
 
