@@ -1,6 +1,14 @@
 import pytest
+import multiprocessing
+import time
 
 from app.marking.symbolic import check_answer
+
+
+def _burn_cpu_for_test():
+    started = time.process_time()
+    while time.process_time() - started < 2.5:
+        pass
 
 
 @pytest.mark.parametrize(
@@ -8,6 +16,7 @@ from app.marking.symbolic import check_answer
     [
         ("{1, 2}", "{2, 1}", "correct"),
         ("{1, 2}", "{1, 3}", "wrong"),
+        ("{1, 2}", "(1, 2)", "wrong"),
         ("(1, 2)", "(1, 2)", "correct"),
         ("(1, 2)", "[1, 2]", "wrong"),
         ("[1, 2)", "(1, 2]", "wrong"),
@@ -19,7 +28,8 @@ def test_collections_intervals_and_exact_algebra(student, reference, verdict):
 
 
 def test_numeric_tolerance_applies_only_to_pure_numbers():
-    assert check_answer("比较", "1.000001", "1")["verdict"] == "correct"
+    assert check_answer("比较", "0.00001", "0")["verdict"] == "correct"
+    assert check_answer("比较", "0.000011", "0")["verdict"] == "wrong"
     assert check_answer("比较", "x + 1.000001", "x + 1")["verdict"] == "wrong"
 
 
@@ -35,22 +45,38 @@ def test_malformed_collection_remains_uncertain():
     assert check_answer("比较", "{1,", "{1}")["verdict"] == "uncertain"
 
 
-def test_expensive_expression_is_bounded(monkeypatch):
-    import os
-    import time
-    import pytest
-
-    if os.name == "nt" or not hasattr(__import__("signal"), "SIGALRM"):
-        pytest.skip("signal based timeout test runs on Unix")
+def test_worker_is_terminated_after_two_seconds_of_cpu():
     import app.marking.symbolic as symbolic
 
-    def block(*_args):
-        deadline = time.perf_counter() + 3
-        while time.perf_counter() < deadline:
-            pass
+    class FakeProcess:
+        exitcode = None
+        terminated = False
+        joins = 0
 
-    monkeypatch.setattr(symbolic, "_check_answer_unbounded", block)
-    assert symbolic.check_answer("比较", "1", "1")["verdict"] == "uncertain"
+        def is_alive(self):
+            return not self.terminated and self.joins < 3
+
+        def join(self, _timeout):
+            self.joins += 1
+
+        def terminate(self):
+            self.terminated = True
+
+    readings = iter((0.2, 1.2, 2.01))
+    process = FakeProcess()
+
+    assert symbolic._wait_for_worker(process, lambda _process: next(readings)) is False
+    assert process.terminated is True
+
+
+def test_real_cpu_bound_worker_is_terminated():
+    import app.marking.symbolic as symbolic
+
+    process = multiprocessing.Process(target=_burn_cpu_for_test)
+    process.start()
+
+    assert symbolic._wait_for_worker(process) is False
+    assert process.is_alive() is False
 
 
 def test_equivalent_irrational_expressions_are_symbolically_equal():

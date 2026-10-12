@@ -1,8 +1,12 @@
 """Conservative symbolic comparison for short mathematical expressions."""
 import ast
+import ctypes
+import ctypes.wintypes
 import multiprocessing
+import os
 import re
 import signal
+import time
 
 import sympy
 from sympy.parsing.sympy_parser import (
@@ -20,6 +24,7 @@ _SAFE_NODES = (
 )
 _NUMERIC_TOLERANCE = 1e-5
 _CHECK_TIMEOUT_SECONDS = 2
+_MAX_WALL_SECONDS = 10
 
 
 def _expand_braced_command(source, command, replacement):
@@ -260,34 +265,101 @@ def _check_worker(connection, args):
         connection.close()
 
 
+def _process_cpu_seconds(process):
+    """Read child user plus kernel CPU time without counting idle waits."""
+    if os.name == "nt":
+        class FileTime(ctypes.Structure):
+            _fields_ = (("low", ctypes.wintypes.DWORD), ("high", ctypes.wintypes.DWORD))
+
+        creation, exit_time, kernel, user = (FileTime() for _ in range(4))
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        get_process_times = kernel32.GetProcessTimes
+        get_process_times.argtypes = (
+            ctypes.wintypes.HANDLE,
+            ctypes.POINTER(FileTime), ctypes.POINTER(FileTime),
+            ctypes.POINTER(FileTime), ctypes.POINTER(FileTime),
+        )
+        get_process_times.restype = ctypes.wintypes.BOOL
+        process_handle = getattr(process, "_handle", None)
+        if process_handle is None:
+            process_handle = process._popen._handle
+        if not get_process_times(
+            ctypes.wintypes.HANDLE(process_handle),
+            ctypes.byref(creation), ctypes.byref(exit_time),
+            ctypes.byref(kernel), ctypes.byref(user),
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+        def seconds(file_time):
+            ticks = (file_time.high << 32) | file_time.low
+            return ticks / 10_000_000
+
+        return seconds(kernel) + seconds(user)
+
+    stat_path = f"/proc/{process.pid}/stat"
+    if os.path.exists(stat_path):
+        with open(stat_path, encoding="ascii") as stat_file:
+            fields = stat_file.read().rsplit(")", 1)[1].split()
+        ticks = int(fields[11]) + int(fields[12])
+        return ticks / os.sysconf("SC_CLK_TCK")
+    raise OSError("child CPU accounting is unavailable")
+
+
+def _wait_for_worker(process, cpu_clock=_process_cpu_seconds):
+    """Join a worker while enforcing CPU and secondary wall clock limits."""
+    started = time.monotonic()
+    while process.is_alive():
+        try:
+            cpu_seconds = cpu_clock(process)
+        except (OSError, ValueError, IndexError):
+            cpu_seconds = None
+        wall_seconds = time.monotonic() - started
+        if cpu_seconds is not None and cpu_seconds >= _CHECK_TIMEOUT_SECONDS:
+            process.terminate()
+            process.join(1)
+            return False
+        wall_limit = _MAX_WALL_SECONDS if cpu_seconds is not None else _CHECK_TIMEOUT_SECONDS
+        if wall_seconds >= wall_limit:
+            process.terminate()
+            process.join(1)
+            return False
+        process.join(min(0.05, _MAX_WALL_SECONDS - wall_seconds))
+    return process.exitcode == 0
+
+
 def check_answer(problem, student_answer, reference_answer):
     """Compare supported answers under a hard per-question time bound."""
-    # SIGALRM preserves the warm SymPy process on Unix. Windows has no
-    # equivalent timer that can stop arbitrary Python work, so isolate it.
-    if hasattr(signal, "SIGALRM") and multiprocessing.current_process().name == "MainProcess":
-        previous = signal.getsignal(signal.SIGALRM)
+    # SIGPROF counts CPU time, preserving the warm SymPy process on Unix.
+    if hasattr(signal, "SIGPROF") and multiprocessing.current_process().name == "MainProcess":
+        previous_handler = signal.getsignal(signal.SIGPROF)
+        previous_delay, previous_interval = signal.getitimer(signal.ITIMER_PROF)
+        cpu_started = time.process_time()
+
         def timeout_handler(*_):
             raise TimeoutError
 
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(_CHECK_TIMEOUT_SECONDS)
+        signal.signal(signal.SIGPROF, timeout_handler)
+        signal.setitimer(signal.ITIMER_PROF, _CHECK_TIMEOUT_SECONDS)
         try:
             return _check_answer_unbounded(problem, student_answer, reference_answer)
         except TimeoutError:
             return {"verdict": "uncertain", "reason": "符号计算超过单题资源限制"}
         finally:
-            signal.alarm(0)
-            signal.signal(signal.SIGALRM, previous)
+            signal.setitimer(signal.ITIMER_PROF, 0)
+            signal.signal(signal.SIGPROF, previous_handler)
+            if previous_delay:
+                elapsed = time.process_time() - cpu_started
+                signal.setitimer(
+                    signal.ITIMER_PROF, max(0, previous_delay - elapsed), previous_interval
+                )
     parent, child = multiprocessing.Pipe(duplex=False)
     process = multiprocessing.Process(
         target=_check_worker, args=(child, (problem, student_answer, reference_answer))
     )
     process.start()
     child.close()
-    process.join(_CHECK_TIMEOUT_SECONDS)
-    if process.is_alive():
-        process.terminate()
-        process.join()
+    completed = _wait_for_worker(process)
+    if not completed:
         parent.close()
         return {"verdict": "uncertain", "reason": "符号计算超过单题资源限制"}
     try:
