@@ -13,6 +13,7 @@ def test_mcp_server_exposes_the_workflow_tools():
         "normalize_marking_result",
         "analyze_weak_points",
         "generate_practice_pdf",
+        "generate_variation_questions",
     }
 
 

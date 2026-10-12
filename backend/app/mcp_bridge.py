@@ -15,6 +15,9 @@ from .materials import MaterialPdfIn, _normalize_options
 from .marking.models import normalize_qwen_result
 from .pdf import render_training_pdf
 from .marking.symbolic import check_answer as compare_answers
+from .config import Settings
+from .agent.llm import create_llm_from_settings
+from .services.variation_questions import generate_variation_questions as generate_variations
 
 
 def service_token_matches(supplied: str, expected: str) -> bool:
@@ -75,6 +78,16 @@ def create_mcp_server() -> FastMCP:
     def check_answer(problem: str, studentAnswer: str, referenceAnswer: str) -> dict:
         """Compare a student's short final expression with a verified reference."""
         return compare_answers(problem, studentAnswer, referenceAnswer)
+
+    @server.tool()
+    def generate_variation_questions(sourceQuestion: str, sourceKnowledgePoint: str) -> dict:
+        """Generate and quality-check one question for each of three tiers."""
+        model = create_llm_from_settings(Settings())
+        result = generate_variations(model, sourceQuestion, sourceKnowledgePoint)
+        return {
+            "questions": [item.model_dump(mode="json") for item in result["questions"]],
+            "warnings": result["warnings"],
+        }
 
     @server.tool()
     def normalize_marking_result(questions: list[dict], subject: str = "") -> dict:
