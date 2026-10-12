@@ -1,64 +1,120 @@
-"""HTML based practice paper PDF rendering."""
+"""PDF rendering helpers for training and focused practice papers."""
 
+from html import escape
+import os
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
-from playwright.sync_api import sync_playwright
-
-
-TEMPLATE_DIR = Path(__file__).parent / "templates"
-_jinja = Environment(
-    loader=FileSystemLoader(TEMPLATE_DIR),
-    autoescape=select_autoescape(("html", "xml")),
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import (
+    HRFlowable,
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
 )
+
+
+FONT_PATH = "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc"
+FONT_NAME = "Helvetica"
+
+if os.path.exists(FONT_PATH):
+    try:
+        # TTC 字体集合，subfontIndex=0 为简体中文 (SC)
+        pdfmetrics.registerFont(TTFont("NotoSansCJK", FONT_PATH, subfontIndex=0))
+        FONT_NAME = "NotoSansCJK"
+    except Exception:
+        try:
+            pdfmetrics.registerFont(TTFont("NotoSansCJK", FONT_PATH))
+            FONT_NAME = "NotoSansCJK"
+        except Exception:
+            pass
+
+
+def _safe_text(value):
+    """Escape untrusted content for ReportLab Paragraph's XML-like markup."""
+    text = "" if value is None else str(value)
+    return escape(text, quote=False).replace("\n", "<br/>")
+
+
+def _styles(font_name):
+    return {
+        "title": ParagraphStyle("PaperTitle", fontName=font_name, fontSize=21,
+                                leading=29, alignment=TA_CENTER, textColor=colors.HexColor("#17324D"),
+                                spaceAfter=8),
+        "meta": ParagraphStyle("PaperMeta", fontName=font_name, fontSize=9.5,
+                               leading=16, alignment=TA_CENTER, textColor=colors.HexColor("#586575")),
+        "weak": ParagraphStyle("WeakPoint", fontName=font_name, fontSize=10,
+                               leading=16, textColor=colors.HexColor("#7A3E00")),
+        "section": ParagraphStyle("Section", fontName=font_name, fontSize=14,
+                                   leading=20, textColor=colors.HexColor("#17324D"),
+                                   spaceBefore=10, spaceAfter=7),
+        "question": ParagraphStyle("Question", fontName=font_name, fontSize=11,
+                                    leading=17, textColor=colors.HexColor("#202B38"),
+                                    spaceAfter=4),
+        "option": ParagraphStyle("Option", fontName=font_name, fontSize=10,
+                                  leading=15, leftIndent=12, textColor=colors.HexColor("#364152"),
+                                  spaceAfter=2),
+        "answer": ParagraphStyle("Answer", fontName=font_name, fontSize=9.5,
+                                  leading=15, leftIndent=12, textColor=colors.HexColor("#174A7E"),
+                                  spaceBefore=3),
+        "analysis": ParagraphStyle("Analysis", fontName=font_name, fontSize=9.5,
+                                   leading=15, leftIndent=12, textColor=colors.HexColor("#56616F")),
+        "footer": ParagraphStyle("Footer", fontName=font_name, fontSize=8,
+                                  leading=12, alignment=TA_CENTER, textColor=colors.HexColor("#9AA3AD")),
+    }
 
 
 def render_training_pdf(path, title, meta, groups, include_answers=False, include_analysis=False):
     """Render a practice paper to ``path`` and return that path.
 
-    This keeps the signature used by training exports and the materials API.
+    The signature is shared by training exports and the materials API.
     """
-    sections = []
-    weak_points = []
-    for label, questions in groups:
-        label = label or "专项练习"
-        if label not in weak_points:
-            weak_points.append(label)
-        sections.append({"title": label, "questions": questions})
+    style = _styles(FONT_NAME)
+    story = [
+        Spacer(1, 5 * mm),
+        Paragraph(_safe_text(title or "薄弱考点专项强化练习卷"), style["title"]),
+        Paragraph(_safe_text(meta or "姓名：___________　班级：___________　得分：___________"), style["meta"]),
+        Spacer(1, 4 * mm),
+        HRFlowable(width="100%", thickness=1.1, color=colors.HexColor("#91A5B7"), spaceAfter=5 * mm),
+    ]
+    weak_points = [str(label) for label, _ in groups if label]
+    if weak_points:
+        weak_text = "、".join(weak_points)
+        box = Table([[Paragraph("<b>【针对性薄弱考点】</b> " + _safe_text(weak_text), style["weak"])]],
+                    colWidths=[170 * mm])
+        box.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFF7E8")),
+            ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#E7B766")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 9), ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+            ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+        ]))
+        story.extend([box, Spacer(1, 5 * mm)])
 
-    html = _jinja.get_template("exam_template.html").render(
-        title=title or "薄弱考点专项强化练习卷",
-        meta=meta or "姓名：___________　班级：___________　考号：___________　得分：___________",
-        weak_points=weak_points,
-        sections=sections,
-        include_answers=include_answers,
-        include_analysis=include_analysis,
-        katex_css=(Path(__file__).parent / "static" / "katex" / "katex.min.css").as_uri(),
-        katex_js=(Path(__file__).parent / "static" / "katex" / "katex.min.js").as_uri(),
-        auto_render_js=(Path(__file__).parent / "static" / "katex" / "contrib" / "auto-render.min.js").as_uri(),
-    )
+    for stage_label, questions in groups:
+        story.append(Paragraph("【" + _safe_text(stage_label or "专项练习") + "】", style["section"]))
+        for index, question in enumerate(questions, 1):
+            block = [Paragraph(f"<b>第 {index} 题</b>　<span color='#7A8795'>[考点：{_safe_text(stage_label or '专项')} ]</span><br/>{_safe_text(question.get('content', ''))}", style["question"])]
+            for option in question.get("options", []) or []:
+                block.append(Paragraph(f"{_safe_text(option.get('key', ''))}. {_safe_text(option.get('text', ''))}", style["option"]))
+            if include_answers and question.get("answer"):
+                block.append(Paragraph("<b>【参考答案】</b> " + _safe_text(question["answer"]), style["answer"]))
+            if include_analysis and question.get("analysis"):
+                block.append(Paragraph("<b>【思路剖析】</b> " + _safe_text(question["analysis"]), style["analysis"]))
+            story.extend([KeepTogether(block), Spacer(1, 4 * mm)])
+    story.extend([Spacer(1, 5 * mm), Paragraph("本内容由 AI 生成，仅供参考（FinalBoost）", style["footer"])])
 
     output_path = Path(path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with NamedTemporaryFile(mode="w", suffix=".html", encoding="utf-8", dir=output_path.parent, delete=False) as handle:
-        handle.write(html)
-        html_path = Path(handle.name)
-    try:
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True, args=["--no-sandbox", "--disable-setuid-sandbox"])
-            try:
-                page = browser.new_page()
-                page.goto(html_path.as_uri(), wait_until="load")
-                page.evaluate("document.fonts.ready")
-                page.wait_for_function("window.__mathReady === true")
-                page.pdf(
-                    path=str(output_path), format="A4", print_background=True,
-                    prefer_css_page_size=True,
-                    display_header_footer=False,
-                )
-            finally:
-                browser.close()
-    finally:
-        html_path.unlink(missing_ok=True)
+    document = SimpleDocTemplate(str(output_path), pagesize=A4, rightMargin=20 * mm,
+                                 leftMargin=20 * mm, topMargin=17 * mm, bottomMargin=17 * mm,
+                                 title=str(title or "专项练习卷"), author="FinalBoost")
+    document.build(story)
     return output_path
