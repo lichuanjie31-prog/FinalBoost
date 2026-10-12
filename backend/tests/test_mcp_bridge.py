@@ -9,8 +9,16 @@ import pytest
 
 
 def _slow_child(send_conn):
+    send_conn.send(("ready", None))
     time.sleep(2)
-    send_conn.send((True, None))
+    send_conn.send(("result", True, None))
+    send_conn.close()
+
+
+def _delayed_start_child(send_conn):
+    time.sleep(0.2)
+    send_conn.send(("ready", None))
+    send_conn.send(("result", True, "finished"))
     send_conn.close()
 
 
@@ -38,6 +46,21 @@ def test_mcp_check_answer_tool_returns_the_symbolic_verdict():
     )
 
     assert result["verdict"] == "correct"
+    assert set(result) == {"verdict", "reason"}
+
+
+def test_mcp_check_answer_preserves_a_normal_uncertain_verdict():
+    tool = create_mcp_server()._tool_manager.get_tool("check_answer")
+
+    result = tool.fn(
+        problem="解方程",
+        studentAnswer="无解",
+        referenceAnswer="x=1",
+    )
+
+    assert result["verdict"] == "uncertain"
+    assert result["reason"]
+    assert "is_error" not in result
 
 
 def test_mcp_pdf_success_keeps_the_existing_response_shape():
@@ -90,13 +113,25 @@ def test_process_timeout_terminates_the_worker():
     context = multiprocessing.get_context("spawn")
     receive, send = context.Pipe(duplex=False)
     process = context.Process(target=_slow_child, args=(send,), daemon=True)
-    started = time.monotonic()
-
     try:
-        with pytest.raises(TimeoutError):
+        with pytest.raises(TimeoutError, match="operation exceeded"):
             mcp_bridge._wait_for_process(process, send, receive, 0.1)
         assert not process.is_alive()
-        assert time.monotonic() - started < 1.5
+    finally:
+        receive.close()
+        send.close()
+
+
+def test_worker_startup_time_does_not_consume_operation_timeout():
+    context = multiprocessing.get_context("spawn")
+    receive, send = context.Pipe(duplex=False)
+    process = context.Process(target=_delayed_start_child, args=(send,), daemon=True)
+
+    try:
+        result = mcp_bridge._wait_for_process(
+            process, send, receive, timeout=0.1, startup_timeout=30
+        )
+        assert result == "finished"
     finally:
         receive.close()
         send.close()

@@ -23,9 +23,10 @@ from .config import Settings
 from .agent.llm import create_llm_from_settings
 from .services.variation_questions import generate_variation_questions as generate_variations
 
-CHECK_ANSWER_TIMEOUT_SECONDS = 3
+CHECK_ANSWER_TIMEOUT_SECONDS = 15
 PDF_RENDER_TIMEOUT_SECONDS = 15
 VARIATION_GENERATION_TIMEOUT_SECONDS = 360
+ISOLATED_WORKER_START_TIMEOUT_SECONDS = 30
 MAX_PDF_QUESTIONS = 500
 MAX_PDF_TEXT_CHARS = 1_000_000
 MAX_PDF_BYTES = 10_000_000
@@ -34,6 +35,7 @@ MAX_VARIATION_INPUT_CHARS = 20_000
 
 def _isolated_tool_worker(send_conn, operation, arguments):
     """Run potentially unbounded CPU work in a process the caller can stop."""
+    send_conn.send(("ready", None))
     try:
         if operation == "check_answer":
             result = compare_answers(**arguments)
@@ -44,9 +46,9 @@ def _isolated_tool_worker(send_conn, operation, arguments):
             result = _generate_variation_payload(**arguments)
         else:
             raise ValueError("unknown isolated operation")
-        send_conn.send((True, result))
+        send_conn.send(("result", True, result))
     except Exception as exc:
-        send_conn.send((False, (type(exc).__name__, str(exc))))
+        send_conn.send(("result", False, (type(exc).__name__, str(exc))))
     finally:
         send_conn.close()
 
@@ -57,29 +59,45 @@ def _run_isolated(operation, arguments, timeout):
     process = context.Process(
         target=_isolated_tool_worker,
         args=(send, operation, arguments),
-        daemon=True,
+        # SymPy's bounded checker starts its own worker on Windows.
+        daemon=False,
     )
     return _wait_for_process(process, send, receive, timeout)
 
 
-def _wait_for_process(process, send, receive, timeout):
-    deadline = time.monotonic() + timeout
-    process.start()
-    send.close()
+def _wait_for_process(process, send, receive, timeout,
+                      startup_timeout=ISOLATED_WORKER_START_TIMEOUT_SECONDS):
+    started = False
     try:
+        process.start()
+        started = True
+        send.close()
+        startup_deadline = time.monotonic() + startup_timeout
+        if not receive.poll(max(0, startup_deadline - time.monotonic())):
+            process.terminate()
+            process.join()
+            raise TimeoutError(f"worker startup exceeded {startup_timeout} seconds")
+        state = receive.recv()
+        if not isinstance(state, tuple) or len(state) != 2 or state[0] != "ready":
+            raise RuntimeError("isolated worker did not send its ready signal")
+
+        deadline = time.monotonic() + timeout
         if not receive.poll(max(0, deadline - time.monotonic())):
             process.terminate()
             process.join()
             raise TimeoutError(f"operation exceeded {timeout} seconds")
-        succeeded, result = receive.recv()
+        state = receive.recv()
         process.join()
+        if not isinstance(state, tuple) or len(state) != 3 or state[0] != "result":
+            raise RuntimeError("isolated worker returned an invalid response")
+        _, succeeded, result = state
         if not succeeded:
             name, message = result
             raise RuntimeError(f"{name}: {message}")
         return result
     finally:
         receive.close()
-        if process.is_alive():
+        if started and process.is_alive():
             process.terminate()
             process.join()
 
@@ -185,7 +203,7 @@ def create_mcp_server() -> FastMCP:
                 CHECK_ANSWER_TIMEOUT_SECONDS,
             )
         except TimeoutError:
-            return _tool_error("TIMEOUT", "答案校验超过 3 秒", can_retry=True)
+            return _tool_error("TIMEOUT", "答案校验超过 15 秒", can_retry=True)
         except Exception:
             return _tool_error("SERVICE_DEGRADED", "答案校验服务暂时不可用", can_retry=True)
 
