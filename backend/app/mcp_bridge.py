@@ -14,6 +14,7 @@ from starlette.requests import Headers
 from starlette.responses import JSONResponse
 
 from .analysis import collect_weak_points
+from .services.four_dimension_diagnosis import DiagnosisResourceLimit, diagnose_four_dimensions
 from .materials import MaterialPdfIn, _normalize_options
 from .marking.models import normalize_qwen_result
 from .pdf import render_training_pdf
@@ -31,6 +32,7 @@ MAX_PDF_QUESTIONS = 500
 MAX_PDF_TEXT_CHARS = 1_000_000
 MAX_PDF_BYTES = 10_000_000
 MAX_VARIATION_INPUT_CHARS = 20_000
+MAX_DIAGNOSIS_TEXT_CHARS = 1_000_000
 
 
 def _isolated_tool_worker(send_conn, operation, arguments):
@@ -184,7 +186,7 @@ def create_mcp_server() -> FastMCP:
         name="FinalBoost",
         instructions=(
             "FinalBoost 的理科试卷辅助工具。只校验短数学表达式，"
-            "并提供批改归一化、薄弱点统计、专项 PDF 和三梯次变式题生成功能。"
+            "并提供批改归一化、薄弱点统计、四维学情诊断、专项 PDF 和三梯次变式题生成功能。"
         ),
         streamable_http_path="/",
         json_response=True,
@@ -253,6 +255,22 @@ def create_mcp_server() -> FastMCP:
             return _tool_error("PARSE_FAILED", "薄弱点数据格式无效", can_retry=False)
         except Exception:
             return _tool_error("SERVICE_DEGRADED", "薄弱点分析服务暂时不可用", can_retry=True)
+
+    @server.tool()
+    def analyze_four_dimension_diagnosis(questions: list[dict]) -> dict:
+        """Diagnose learning dimensions with citations to explicit wrong-question evidence."""
+        try:
+            if len(json.dumps(questions, ensure_ascii=False)) > MAX_DIAGNOSIS_TEXT_CHARS:
+                return _tool_error("RESOURCE_LIMIT", "诊断文本超过 1 MB 限制", can_retry=False)
+            return diagnose_four_dimensions(questions)
+        except DiagnosisResourceLimit:
+            return _tool_error("RESOURCE_LIMIT", "诊断题目超过 500 道或作答超过 2000 条", can_retry=False)
+        except TimeoutError:
+            return _tool_error("TIMEOUT", "四维学情诊断超时", can_retry=True)
+        except (TypeError, ValueError, ValidationError, RecursionError):
+            return _tool_error("PARSE_FAILED", "四维学情诊断数据格式无效", can_retry=False)
+        except Exception:
+            return _tool_error("SERVICE_DEGRADED", "四维学情诊断服务暂时不可用", can_retry=True)
 
     @server.tool()
     def generate_practice_pdf(

@@ -25,11 +25,13 @@ def _delayed_start_child(send_conn):
 def test_mcp_server_exposes_the_workflow_tools():
     server = create_mcp_server()
     tools = server._tool_manager.list_tools()
+    assert len(tools) == len({tool.name for tool in tools})
 
     assert {tool.name for tool in tools} == {
         "check_answer",
         "normalize_marking_result",
         "analyze_weak_points",
+        "analyze_four_dimension_diagnosis",
         "generate_practice_pdf",
         "generate_variation_questions",
     }
@@ -239,3 +241,61 @@ def test_mcp_service_token_comparison_rejects_wrong_and_empty_values():
     assert service_token_matches("expected-token", "expected-token") is True
     assert service_token_matches("wrong-token", "expected-token") is False
     assert service_token_matches("", "") is False
+
+
+@pytest.mark.parametrize("questions", [None, {}, [123], [{"answers": {"correct": False}}]])
+def test_mcp_diagnosis_invalid_input_returns_parse_error(questions):
+    tool = create_mcp_server()._tool_manager.get_tool("analyze_four_dimension_diagnosis")
+    result = tool.fn(questions=questions)
+    assert result["error_code"] == "PARSE_FAILED"
+    assert result["is_error"] is True
+
+
+def test_mcp_diagnosis_question_limit_returns_resource_error():
+    tool = create_mcp_server()._tool_manager.get_tool("analyze_four_dimension_diagnosis")
+    assert tool.fn(questions=[{}] * 501)["error_code"] == "RESOURCE_LIMIT"
+
+
+@pytest.mark.parametrize("exception,code", [
+    (RuntimeError("private traceback and credentials"), "SERVICE_DEGRADED"),
+    (TimeoutError("private timeout"), "TIMEOUT"),
+])
+def test_mcp_diagnosis_hides_internal_errors(monkeypatch, exception, code):
+    def fail(_questions):
+        raise exception
+    monkeypatch.setattr(mcp_bridge, "diagnose_four_dimensions", fail)
+    tool = create_mcp_server()._tool_manager.get_tool("analyze_four_dimension_diagnosis")
+    result = tool.fn(questions=[])
+    assert result["error_code"] == code
+    assert result["can_retry"] is True
+    assert "private" not in str(result)
+
+
+def test_mcp_normalized_marking_feeds_diagnosis_contract():
+    from app.tool_contracts import DimensionDiagnosis
+    server = create_mcp_server()
+    marking = server._tool_manager.get_tool("normalize_marking_result").fn(questions=[{
+        "question_text": "化简 2x+3x", "student_answer": "6x",
+        "correct_answer": "5x", "judgement": "incorrect",
+        "error_reason": "代数计算错误", "knowledge_points": ["整式运算"],
+    }])
+    result = server._tool_manager.get_tool("analyze_four_dimension_diagnosis").fn(
+        questions=marking["questions"])
+    dimensions = [DimensionDiagnosis.model_validate(item) for item in result["dimensions"]]
+    algebra = next(item for item in dimensions if item.dimension == "algebraic_operation")
+    assert algebra.evidence_question_ids == ["1"]
+    assert algebra.evidence_count == 1
+    assert "代数计算错误" in algebra.reason
+    assert "score" not in result
+
+
+def test_mcp_pdf_timeout_keeps_a_usable_markdown_paper(monkeypatch):
+    def timeout(*args):
+        raise TimeoutError("render stalled")
+    monkeypatch.setattr(mcp_bridge, "_run_isolated", timeout)
+    result = create_mcp_server()._tool_manager.get_tool("generate_practice_pdf").fn(
+        sections=[{"knowledgePoint": "代数", "questions": [{"stem": "1+1=?", "answer": "2"}]}])
+    assert result["error_code"] == "TIMEOUT"
+    assert result["fallback_payload"]["mimeType"] == "text/markdown"
+    assert "1+1=?" in result["fallback_payload"]["markdown"]
+    assert "答案：" not in result["fallback_payload"]["markdown"]
