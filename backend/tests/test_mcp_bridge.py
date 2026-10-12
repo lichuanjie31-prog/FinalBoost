@@ -12,6 +12,7 @@ def test_mcp_server_exposes_the_workflow_tools():
         "check_answer",
         "normalize_marking_result",
         "analyze_weak_points",
+        "analyze_four_dimension_diagnosis",
         "generate_practice_pdf",
     }
 

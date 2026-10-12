@@ -11,6 +11,7 @@ from starlette.requests import Headers
 from starlette.responses import JSONResponse
 
 from .analysis import collect_weak_points
+from .services.four_dimension_diagnosis import diagnose_four_dimensions
 from .materials import MaterialPdfIn, _normalize_options
 from .marking.models import normalize_qwen_result
 from .pdf import render_training_pdf
@@ -90,6 +91,11 @@ def create_mcp_server() -> FastMCP:
             "threshold": threshold,
             "weakPoints": collect_weak_points(questions, threshold),
         }
+
+    @server.tool()
+    def analyze_four_dimension_diagnosis(questions: list[dict]) -> dict:
+        """Diagnose learning dimensions with citations to explicit wrong-question evidence."""
+        return diagnose_four_dimensions(questions)
 
     @server.tool()
     def generate_practice_pdf(
