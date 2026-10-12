@@ -1,12 +1,11 @@
 """MCP surface for DuMate's Streamable HTTP connector."""
 from app.main import create_app
+import app.mcp_bridge as mcp_bridge
 from app.mcp_bridge import create_mcp_server, service_token_matches
 from starlette.routing import Mount
 import multiprocessing
 import time
 import pytest
-
-from app import mcp_bridge
 
 
 def _slow_child(send_conn):
@@ -24,6 +23,7 @@ def test_mcp_server_exposes_the_workflow_tools():
         "normalize_marking_result",
         "analyze_weak_points",
         "generate_practice_pdf",
+        "generate_variation_questions",
     }
 
 
@@ -100,6 +100,98 @@ def test_process_timeout_terminates_the_worker():
     finally:
         receive.close()
         send.close()
+
+
+def test_mcp_variation_tool_uses_configured_backend_and_returns_three_tiers(monkeypatch):
+    import json
+
+    class LocalModel:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, prompt):
+            self.calls += 1
+            tier = next(name for name in ("consolidation", "reverse", "extension")
+                        if f"tier 固定为 {name}" in prompt)
+            stems = {
+                "consolidation": "解一元一次方程 x+1=3",
+                "reverse": "一元一次方程已知解为 2，求未知常数",
+                "extension": "一元一次方程应用，已知 x=2，求另一个量",
+            }
+            return type("Response", (), {"content": json.dumps({
+                "tier": tier,
+                "source_knowledge_point": "一元一次方程",
+                "difficulty": "easy",
+                "stem": stems[tier],
+                "options": None,
+                "answer": "2",
+                "analysis": "最终答案：2",
+            }, ensure_ascii=False)})()
+
+    model = LocalModel()
+    def run_with_local_model(operation, arguments, timeout):
+        assert operation == "generate_variations"
+        assert timeout == mcp_bridge.VARIATION_GENERATION_TIMEOUT_SECONDS
+        return mcp_bridge._generate_variation_payload(**arguments, model=model)
+
+    monkeypatch.setattr(mcp_bridge, "_run_isolated", run_with_local_model)
+    tool = create_mcp_server()._tool_manager.get_tool("generate_variation_questions")
+
+    result = tool.fn(sourceQuestion="解方程 x+1=3", sourceKnowledgePoint="一元一次方程")
+
+    assert model.calls == 3
+    assert [item["tier"] for item in result["questions"]] == ["consolidation", "reverse", "extension"]
+    assert all(item["validation_status"] == "passed" for item in result["questions"])
+
+
+@pytest.mark.parametrize("source_question,source_point", [("", "一元一次方程"), ("解方程 x=2", " "), (123, "一元一次方程")])
+def test_mcp_variation_tool_rejects_invalid_input(source_question, source_point):
+    tool = create_mcp_server()._tool_manager.get_tool("generate_variation_questions")
+
+    result = tool.fn(sourceQuestion=source_question, sourceKnowledgePoint=source_point)
+
+    assert result["is_error"] is True
+    assert result["error_code"] == "PARSE_FAILED"
+
+
+def test_mcp_variation_tool_enforces_input_size_limit():
+    tool = create_mcp_server()._tool_manager.get_tool("generate_variation_questions")
+
+    result = tool.fn(sourceQuestion="x" * (mcp_bridge.MAX_VARIATION_INPUT_CHARS + 1),
+                     sourceKnowledgePoint="一元一次方程")
+
+    assert result["is_error"] is True
+    assert result["error_code"] == "RESOURCE_LIMIT"
+
+
+def test_mcp_variation_tool_maps_worker_timeout_to_standard_error(monkeypatch):
+    calls = []
+
+    def timeout(operation, arguments, seconds):
+        calls.append((operation, arguments, seconds))
+        raise TimeoutError("worker timed out")
+
+    monkeypatch.setattr(mcp_bridge, "_run_isolated", timeout)
+    tool = create_mcp_server()._tool_manager.get_tool("generate_variation_questions")
+
+    result = tool.fn(sourceQuestion="解方程 x+1=3", sourceKnowledgePoint="一元一次方程")
+
+    assert result["is_error"] is True
+    assert result["error_code"] == "TIMEOUT"
+    assert result["can_retry"] is True
+    assert calls[0][0] == "generate_variations"
+    assert calls[0][2] == mcp_bridge.VARIATION_GENERATION_TIMEOUT_SECONDS
+
+
+def test_mcp_variation_tool_maps_worker_failure_to_standard_error(monkeypatch):
+    monkeypatch.setattr(mcp_bridge, "_run_isolated", lambda *args: (_ for _ in ()).throw(RuntimeError("worker failed")))
+    tool = create_mcp_server()._tool_manager.get_tool("generate_variation_questions")
+
+    result = tool.fn(sourceQuestion="解方程 x+1=3", sourceKnowledgePoint="一元一次方程")
+
+    assert result["is_error"] is True
+    assert result["error_code"] == "SERVICE_DEGRADED"
+    assert result["can_retry"] is True
 
 
 def test_mcp_endpoint_is_mounted_at_the_connector_path():

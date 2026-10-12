@@ -19,13 +19,17 @@ from .marking.models import normalize_qwen_result
 from .pdf import render_training_pdf
 from .marking.symbolic import check_answer as compare_answers
 from .tool_contracts import MCPToolError
-
+from .config import Settings
+from .agent.llm import create_llm_from_settings
+from .services.variation_questions import generate_variation_questions as generate_variations
 
 CHECK_ANSWER_TIMEOUT_SECONDS = 3
 PDF_RENDER_TIMEOUT_SECONDS = 15
+VARIATION_GENERATION_TIMEOUT_SECONDS = 360
 MAX_PDF_QUESTIONS = 500
 MAX_PDF_TEXT_CHARS = 1_000_000
 MAX_PDF_BYTES = 10_000_000
+MAX_VARIATION_INPUT_CHARS = 20_000
 
 
 def _isolated_tool_worker(send_conn, operation, arguments):
@@ -33,9 +37,13 @@ def _isolated_tool_worker(send_conn, operation, arguments):
     try:
         if operation == "check_answer":
             result = compare_answers(**arguments)
-        else:
+        elif operation == "render_pdf":
             render_training_pdf(**arguments)
             result = None
+        elif operation == "generate_variations":
+            result = _generate_variation_payload(**arguments)
+        else:
+            raise ValueError("unknown isolated operation")
         send_conn.send((True, result))
     except Exception as exc:
         send_conn.send((False, (type(exc).__name__, str(exc))))
@@ -101,6 +109,17 @@ def _markdown_paper(body):
     return "\n".join(lines).strip() + "\n"
 
 
+def _generate_variation_payload(sourceQuestion, sourceKnowledgePoint, model=None):
+    """Return JSON-ready variation results; model injection supports local tests."""
+    if model is None:
+        model = create_llm_from_settings(Settings())
+    result = generate_variations(model, sourceQuestion, sourceKnowledgePoint)
+    return {
+        "questions": [item.model_dump(mode="json") for item in result["questions"]],
+        "warnings": result["warnings"],
+    }
+
+
 def service_token_matches(supplied: str, expected: str) -> bool:
     return bool(expected) and hmac.compare_digest(supplied.encode(), expected.encode())
 
@@ -147,7 +166,7 @@ def create_mcp_server() -> FastMCP:
         name="FinalBoost",
         instructions=(
             "FinalBoost 的理科试卷辅助工具。只校验短数学表达式，"
-            "并提供现有批改归一化、薄弱点统计和专项 PDF 生成功能。"
+            "并提供批改归一化、薄弱点统计、专项 PDF 和三梯次变式题生成功能。"
         ),
         streamable_http_path="/",
         json_response=True,
@@ -169,6 +188,28 @@ def create_mcp_server() -> FastMCP:
             return _tool_error("TIMEOUT", "答案校验超过 3 秒", can_retry=True)
         except Exception:
             return _tool_error("SERVICE_DEGRADED", "答案校验服务暂时不可用", can_retry=True)
+
+    @server.tool()
+    def generate_variation_questions(sourceQuestion: str, sourceKnowledgePoint: str) -> dict:
+        """Generate and quality-check one question for each of three tiers."""
+        if not isinstance(sourceQuestion, str) or not isinstance(sourceKnowledgePoint, str):
+            return _tool_error("PARSE_FAILED", "原题和原始考点必须为文本", can_retry=False)
+        if not sourceQuestion.strip() or not sourceKnowledgePoint.strip():
+            return _tool_error("PARSE_FAILED", "原题和原始考点均为必填项", can_retry=False)
+        if len(sourceQuestion) + len(sourceKnowledgePoint) > MAX_VARIATION_INPUT_CHARS:
+            return _tool_error("RESOURCE_LIMIT", "原题与考点文本总长度超过 20000 字符", can_retry=False)
+        try:
+            return _run_isolated(
+                "generate_variations",
+                {"sourceQuestion": sourceQuestion, "sourceKnowledgePoint": sourceKnowledgePoint},
+                VARIATION_GENERATION_TIMEOUT_SECONDS,
+            )
+        except TimeoutError:
+            return _tool_error("TIMEOUT", "变式题生成超过 360 秒", can_retry=True)
+        except (TypeError, ValueError, ValidationError):
+            return _tool_error("PARSE_FAILED", "变式题生成数据格式无效", can_retry=False)
+        except Exception:
+            return _tool_error("SERVICE_DEGRADED", "变式题生成服务暂时不可用", can_retry=True)
 
     @server.tool()
     def normalize_marking_result(questions: list[dict], subject: str = "") -> dict:
