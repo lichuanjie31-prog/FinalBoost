@@ -2,6 +2,7 @@
 
 from html import escape
 import os
+import re
 from pathlib import Path
 
 from reportlab.lib import colors
@@ -11,9 +12,11 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import (
     HRFlowable,
     KeepTogether,
+    PageBreak,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -37,10 +40,71 @@ if os.path.exists(FONT_PATH):
         except Exception:
             pass
 
+if FONT_NAME == 'Helvetica':
+    # Local TrueType CJK fonts keep Chinese text embedded and extractable.
+    for candidate in (Path(os.environ.get('WINDIR', 'C:/Windows')) / 'Fonts/msyh.ttc',
+                      Path('/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc')):
+        if candidate.exists():
+            try:
+                pdfmetrics.registerFont(TTFont('LocalCJK', str(candidate), subfontIndex=0))
+                FONT_NAME = 'LocalCJK'
+                break
+            except Exception:
+                continue
+    if FONT_NAME == 'Helvetica':
+        pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
+        FONT_NAME = 'STSong-Light'
+
+
+def sanitize_math_text(text: str) -> str:
+    """Convert common LaTeX/Typst remnants into readable plain math text."""
+    text = str(text or '')
+    def group_at(source, start):
+        if start >= len(source) or source[start] != '{':
+            return None
+        depth = 0
+        for index in range(start, len(source)):
+            depth += (source[index] == '{') - (source[index] == '}')
+            if depth == 0:
+                return source[start + 1:index], index + 1
+        return None
+
+    command = re.compile(r'\\(?:dfrac|tfrac|frac|sqrt)\s*')
+    cursor = 0
+    while match := command.search(text, cursor):
+        first = group_at(text, match.end())
+        if not first:
+            cursor = match.end()
+            continue
+        inner, end = first
+        if match.group().strip() == r'\sqrt':
+            replacement = '√(' + sanitize_math_text(inner) + ')'
+        else:
+            second = group_at(text, end)
+            if not second:
+                cursor = end
+                continue
+            denominator, end = second
+            replacement = '(' + sanitize_math_text(inner) + ')/(' + sanitize_math_text(denominator) + ')'
+        text = text[:match.start()] + replacement + text[end:]
+        cursor = match.start() + len(replacement)
+    text = re.sub(r'bb\(R\)|\\mathbb\{R\}', 'R（实数集）', text)
+    text = re.sub(r'\binfinity\b', '∞', text)
+    replacements = {'infty': '∞', 'le': '≤', 'leq': '≤', 'ge': '≥', 'geq': '≥',
+                    'neq': '≠', 'ne': '≠', 'alpha': 'α', 'beta': 'β', 'gamma': 'γ',
+                    'theta': 'θ', 'pi': 'π', 'lambda': 'λ', 'Delta': 'Δ', 'in': '∈',
+                    'cup': '∪', 'cap': '∩', 'subset': '⊂', 'cdot': '·', 'times': '×',
+                    'div': '÷', 'left': '', 'right': ''}
+    text = re.sub(r'\\([A-Za-z]+)', lambda match: replacements.get(match.group(1), match.group(0)), text)
+    for old, new in (('<=', '≤'), ('>=', '≥'), ('!=', '≠')):
+        text = text.replace(old, new)
+    text = re.sub(r'\^\{([^{}]+)\}', r'^(\1)', text)
+    return text.replace('$', '')
+
 
 def _safe_text(value):
     """Escape untrusted content for ReportLab Paragraph's XML-like markup."""
-    text = "" if value is None else str(value)
+    text = sanitize_math_text("" if value is None else str(value))
     return escape(text, quote=False).replace("\n", "<br/>")
 
 
@@ -81,7 +145,8 @@ def render_training_pdf(path, title, meta, groups, include_answers=False, includ
     story = [
         Spacer(1, 5 * mm),
         Paragraph(_safe_text(title or "薄弱考点专项强化练习卷"), style["title"]),
-        Paragraph(_safe_text(meta or "姓名：___________　班级：___________　得分：___________"), style["meta"]),
+        Paragraph(_safe_text("姓名：___________　班级：___________　得分：___________"), style["meta"]),
+        Paragraph(_safe_text(meta or ''), style['meta']),
         Spacer(1, 4 * mm),
         HRFlowable(width="100%", thickness=1.1, color=colors.HexColor("#91A5B7"), spaceAfter=5 * mm),
     ]
@@ -98,16 +163,26 @@ def render_training_pdf(path, title, meta, groups, include_answers=False, includ
         ]))
         story.extend([box, Spacer(1, 5 * mm)])
 
+    numbered = []
     for stage_label, questions in groups:
         story.append(Paragraph("【" + _safe_text(stage_label or "专项练习") + "】", style["section"]))
-        for index, question in enumerate(questions, 1):
+        for question in questions:
+            index = len(numbered) + 1
+            numbered.append((index, question))
             block = [Paragraph(f"<b>第 {index} 题</b>　<span color='#7A8795'>[考点：{_safe_text(stage_label or '专项')} ]</span><br/>{_safe_text(question.get('content', ''))}", style["question"])]
-            for option in question.get("options", []) or []:
-                block.append(Paragraph(f"{_safe_text(option.get('key', ''))}. {_safe_text(option.get('text', ''))}", style["option"]))
-            if include_answers and question.get("answer"):
-                block.append(Paragraph("<b>【参考答案】</b> " + _safe_text(question["answer"]), style["answer"]))
-            if include_analysis and question.get("analysis"):
-                block.append(Paragraph("<b>【思路剖析】</b> " + _safe_text(question["analysis"]), style["analysis"]))
+            from .materials import _normalize_options
+            for option_index, option in enumerate(_normalize_options(question.get('options'))):
+                label = chr(65 + option_index % 26)
+                block.append(Paragraph(f"{label}. {_safe_text(option['text'])}", style["option"]))
+            story.extend([KeepTogether(block), Spacer(1, 15 * mm)])
+    if include_answers or include_analysis:
+        story.extend([PageBreak(), Paragraph('【参考答案与名师解析】', style['title']), Spacer(1, 5 * mm)])
+        for index, question in numbered:
+            block = [Paragraph(f'第 {index} 题', style['section'])]
+            if include_answers:
+                block.append(Paragraph('【参考答案】 ' + _safe_text(question.get('answer', '')), style['answer']))
+            if include_analysis:
+                block.append(Paragraph('【思路剖析】 ' + _safe_text(question.get('analysis', '')), style['analysis']))
             story.extend([KeepTogether(block), Spacer(1, 4 * mm)])
     story.extend([Spacer(1, 5 * mm), Paragraph("本内容由 AI 生成，仅供参考（FinalBoost）", style["footer"])])
 

@@ -11,6 +11,8 @@ class VariationQuestion(BaseModel):
     answer: str
     analysis: str
     validation_status: Literal["passed", "failed", "pending"] = "pending"
+    reason: Optional[str] = None
+    warnings: List[str] = Field(default_factory=list)
 
 # 任务 3 契约：四维诊断与证据链
 class DimensionDiagnosis(BaseModel):

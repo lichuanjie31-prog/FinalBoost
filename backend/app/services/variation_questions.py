@@ -38,7 +38,7 @@ tier 固定为 {tier}，source_knowledge_point 固定为 {json.dumps(knowledge_p
 
 def generate_variation_questions(llm_client, source_question: str,
                                  source_knowledge_point: str) -> dict:
-    """Generate one question per tier, validate and retry each failure once."""
+    """Generate each tier in at most three rounds, retaining rejected evidence."""
     if llm_client is None:
         return {"questions": [], "warnings": ["后端模型未配置，未生成题目"]}
     if not source_question.strip() or not source_knowledge_point.strip():
@@ -67,7 +67,7 @@ def generate_variation_questions(llm_client, source_question: str,
             ), tier)
             candidate = _parse_question(response.content, tier, source_knowledge_point)
         except Exception:
-            # Provider and parse failures are retried once through the same
+            # Provider and parse failures use the same bounded correction
             # correction path and remain failed if no valid question arrives.
             pass
         if candidate is None:
@@ -83,24 +83,27 @@ def generate_variation_questions(llm_client, source_question: str,
         generated.append(candidate)
 
     generated = validate_variations(generated)
-    for index, item in enumerate(generated):
-        if item.validation_status != "failed":
-            continue
-        tier, label, direction = _TIERS[index]
-        try:
-            response = invoke(_prompt(
-                tier, label, direction, source_question, source_knowledge_point,
-                validation_reason(item),
-            ), tier)
-            generated[index] = _parse_question(response.content, tier, source_knowledge_point)
-        except Exception:
-            # Keep the existing failed item as an auditable warning.
-            pass
-    generated = validate_variations(generated)
+    for _ in range(2):
+        failed = [(index, item) for index, item in enumerate(generated)
+                  if item.validation_status == "failed"]
+        if not failed:
+            break
+        for index, item in failed:
+            tier, label, direction = _TIERS[index]
+            try:
+                response = invoke(_prompt(
+                    tier, label, direction, source_question, source_knowledge_point,
+                    validation_reason(item),
+                ), tier)
+                generated[index] = _parse_question(response.content, tier, source_knowledge_point)
+            except Exception:
+                # Preserve rejected evidence when correction cannot complete.
+                pass
+        generated = validate_variations(generated)
     warnings = []
     for item in generated:
         if item.validation_status == "failed":
-            warnings.append(f"{item.tier} 梯次未通过校验，需人工复核")
+            warnings.append(f"{item.tier} 梯次经最多 3 轮生成仍未通过校验，需人工复核：{item.reason or '生成失败'}")
     return {"questions": generated, "warnings": warnings, "failure_codes": {
         item.tier: provider_errors.get(item.tier, "PARSE_FAILED")
         for item in generated if item.validation_status == "failed"

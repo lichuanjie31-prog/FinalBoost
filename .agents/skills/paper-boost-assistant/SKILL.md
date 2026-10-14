@@ -12,8 +12,8 @@ description: 面向高中理科试卷的互动式诊断、逐题讲解、微型�
 - 每轮只处理一道有依据的典型错题。不得编造题干、选项、学生作答、标准答案、分值或图片中无法辨认的内容。
 - 首轮只讲评第 1 道典型错题。若没有可可靠识别的错题，说明缺少的信息并请学生补充，不得虚构例题冒充原题。
 - 精讲必须呈现原题、思维陷阱、不跳步推导和考场秒杀锦囊。讲完先请学生自评，随后等待回复。
-- 自评低于 7 分时进入针对性拆解。自评达到 7 分时，必须给出一道微型检验题。自评高分、表示理解或主动要求练习都不能跳过检验。
-- 只有学生在当前会话中提交了正确答案，才能判定当前关卡成功。发出题目、学生表示懂了、答案不完整或答案错误都不算通关。
+- 自评低于 7 分时进入针对性拆解。自评达到 7 分时，必须先给出一道微型客观检验题并等待学生回复。自评高分、表示理解或主动要求练习都不能跳过检验。
+- 只有学生在当前会话中提交答案且调用 `check_answer` 得到 `verdict=correct`，才能判定当前关卡成功并进入下一题或生成变式卷。发出题目、学生表示懂了、答案不完整或答案错误都不算通关。
 - 微型检验题只在对话中呈现，不调用 `generate_practice_pdf` 代替检验题，也不声称已生成文件。
 - 工具调用遵循已配置的 MCP 工具定义。不得在本文件写入 Base URL、Auth Token 或其他凭证。
 
@@ -57,9 +57,9 @@ description: 面向高中理科试卷的互动式诊断、逐题讲解、微型�
 
 每关强制出一道选择题或短填空题。题目须检验刚讲解的同一核心方法，简短明确，有唯一且可核验的答案。优先从原题改变一个条件或缩小一个步骤来构造；不得泄露答案，不得用学生尚未学过的知识设置障碍。
 
-先将状态设为 `checkpoint_pending` 与 `pending`，再把题目展示给学生并等待作答。对答案的判断必须有可靠依据。若答案错误，设为 `checkpoint_retry` 与 `incorrect`，指出必要的纠错线索后让学生重答。若题意、作答或标准结果无法可靠判断，保留不确定状态，说明原因并调整为可核验的问题；不得猜测并判为正确或错误。
+先将状态设为 `checkpoint_pending` 与 `pending`，再把题目展示给学生并等待作答。学生回复后必须调用 `check_answer`，将学生作答与独立核实的参考表达式比较。选择题先将选项字母转换为该选项对应的表达式。只有 `verdict=correct` 才能通关，`wrong` 要求重答，`uncertain` 保持未通关并调整为可核验的题目。对答案的判断必须有可靠依据。若答案错误，设为 `checkpoint_retry` 与 `incorrect`，指出必要的纠错线索后让学生重答。若题意、作答或标准结果无法可靠判断，保留不确定状态，说明原因并调整为可核验的问题；不得猜测并判为正确或错误。
 
-学生在当前会话中正确作答后，设为 `cleared` 与 `correct`，宣布闯关成功，并询问是否进入下一关。不得在学生答对前询问是否进入下一关，也不得自行继续下一题。
+学生在当前会话中正确作答且 `check_answer` 核验通过后，设为 `cleared` 与 `correct`，宣布闯关成功，并询问是否进入下一关。不得在学生答对前询问是否进入下一关，也不得自行继续下一题。
 
 ### 后续关卡
 
@@ -117,11 +117,64 @@ description: 面向高中理科试卷的互动式诊断、逐题讲解、微型�
 - `analyze_weak_points(questions, threshold=0.8)`：传入上述归一化 `questions`，返回 `threshold` 与 `weakPoints`。待核实答案不计为错题。
 - `analyze_four_dimension_diagnosis(questions)`：传入上述归一化 `questions`，返回 `dimensions` 与 `markdown`。四项分别是知识记忆、代数运算、图形与几何、逻辑推理；维度标识分别为 `knowledge_memory`、`algebraic_operation`、`graphical_combination`、`logical_reasoning`。每项含 `level`、`evidence_count`、`evidence_question_ids`、`reason`，证据不足时为 `insufficient_evidence`。
 - `generate_variation_questions(sourceQuestion, sourceKnowledgePoint)`：两个参数均为文本，返回 `questions` 与 `warnings`；三个梯次标识为 `consolidation`、`reverse`、`extension`。每题包含 `tier`、`source_knowledge_point`、`difficulty`、`stem`、`options`、`answer`、`analysis`、`validation_status`。调用后仍一次只展示一道题。
-- `generate_practice_pdf(sections, title="专项练习卷", course="", meta="", includeAnswers=False, includeAnalysis=False)`：`sections` 是含 `knowledgePoint` 与 `questions` 的数组，每题使用 `stem`、`options`、`answer`、`analysis`。如把变式题转换为题卷，按 `source_knowledge_point` 分组为 `knowledgePoint`，仅选择通过校验的题目。返回 `filename`、`mimeType`、`base64`，没有下载 URL。只有 DuMate 实际保存并提供附件后，才能提供该附件的真实下载信息。
+- `generate_practice_pdf(sections, title="专项练习卷", course="", meta="", includeAnswers=False, includeAnalysis=False)`：`sections` 是含 `knowledgePoint` 与 `questions` 的数组，每题使用 `stem`、`options`、`answer`、`analysis`。如把变式题转换为题卷，按 `source_knowledge_point` 分组为 `knowledgePoint`，仅选择通过校验的题目。返回 `filename`、`mimeType`、`base64`，质量门槛会过滤显式 `failed` 和 `pending` 的题目；全部未通过时返回 `PARSE_FAILED`，不生成 PDF。答案和解析在独立分页中展示，需显式设置 `includeAnswers=true` 和 `includeAnalysis=true`。没有下载 URL。只有 DuMate 实际保存并提供附件后，才能提供该附件的真实下载信息。
 
 所有工具的业务错误均按 `is_error=true`、`error_code`、`message`、`can_retry`、`fallback_payload` 处理。错误代码为 `TIMEOUT`、`PARSE_FAILED`、`RESOURCE_LIMIT` 或 `SERVICE_DEGRADED`，正常的 `uncertain` 判题结果不属于服务失败。
 
-符号校验支持短表达式、有限集合和一维区间，并对纯数值使用容差；含变量表达式仍要求代数等价。复杂方程、带条件的解集、概率分布、单位换算、证明过程、图片识别和步骤评分需另行核实。遇到超出支持范围的内容时保留 `uncertain`，继续可靠的人工分析。
+符号校验支持短表达式、有限集合和一维区间，并对纯数值使用容差；含变量表达式仍要求代数等价。复杂文字题、带条件的解集、概率分布、单位换算、证明过程、图片识别和步骤评分需另行核实。遇到超出支持范围的内容时保留 `uncertain`，继续可靠的人工分析。
+
+
+## 六个工具的标准 JSON 入参模板
+
+调用时使用以下标准字段。将示例值替换为当前真实材料，禁止自行发明字段名。
+后端接收的 DuMate 别名用于兼容历史请求，新调用统一使用这里的标准结构。
+
+### check_answer
+
+```json
+{"problem":"解方程 x+1=3","studentAnswer":"2","referenceAnswer":"2"}
+```
+
+### normalize_marking_result
+
+```json
+{"subject":"数学","questions":[{"question_id":"1","question_text":"计算 1+1","student_answer":"3","correct_answer":"2","judgement":"incorrect","analysis":"加法计算错误","error_reason":"计算错误","knowledge_points":["整式运算"],"children":[]}]}
+```
+
+### analyze_weak_points
+
+```json
+{"threshold":0.8,"questions":[{"questionId":"1","answers":[{"correct":false,"knowledgePoints":["动量结合"],"score":null,"maxScore":null}]}]}
+```
+
+返回 `code` 与 `standardName` 聚合考点。同一答案中的同编码标签只统计一次。
+没有完整分值依据时 `totalScore` 和 `scoreLossRate` 为 null，使用 `errorRate` 与 `accuracyRate` 描述表现。
+固定编码为应用内考点编号，不宣称其为官方颁发的课标编号。
+
+### analyze_four_dimension_diagnosis
+
+```json
+{"questions":[{"questionId":"1","answers":[{"correct":false,"knowledgePoints":["动量守恒"],"errorReason":"公式记忆错误","analysis":"遗漏动量守恒适用条件"}],"children":[]}]}
+```
+
+### generate_variation_questions
+
+```json
+{"sourceQuestion":"解一元一次方程 x+1=3","sourceKnowledgePoint":"一元一次方程"}
+```
+
+最多 3 轮生成。保留失败题及原因，交付时仅选择 `validation_status=passed` 的题目。
+不能用模型答案与解析结论一致代替题干独立求解核验。
+
+### generate_practice_pdf
+
+```json
+{"title":"专项练习卷","course":"数学","meta":"已完成微型检验后的巩固练习","includeAnswers":true,"includeAnalysis":true,"sections":[{"knowledgePoint":"一元一次方程","questions":[{"stem":"解方程 x+1=3","type":"选择题","options":[{"key":"A","text":"2"},{"key":"B","text":"3"}],"answer":"2","analysis":"两边减 1，得到 x=2。","validation_status":"passed"}]}]}
+```
+
+从变式工具转交时必须保留真实的 `validation_status`，禁止删除状态或改写为 passed 绕过入卷检查。
+未通过微型检验时保持当前关卡，先出一道客观检验题并等待作答。
+学生自评 9 分、表示理解或催促出卷均不能替代 `check_answer` 的 correct 结果。
 
 ## 本地集成与部署边界
 

@@ -42,20 +42,22 @@ def test_generates_all_three_tiers_with_shared_contract():
     assert len(model.prompts) == 3
 
 
-def test_failed_validation_gets_one_targeted_retry_then_warning():
+def test_failed_validation_gets_two_targeted_retries_then_warning():
     model = SequenceModel([
         payload("consolidation", "解方程 x+1=3"),
         payload("reverse", "计算三角形面积"),
-        payload("reverse", "计算圆的周长"),
         payload("extension", "求函数 y=sin(x) 的最大值"),
+        payload("reverse", "计算圆的周长"),
         payload("extension", "求函数 y=cos(x) 的最大值"),
+        payload("reverse", "计算三角形周长"),
+        payload("extension", "求三角函数周期"),
     ])
 
     result = generate_variation_questions(model, "解方程 x+1=3", "一元一次方程")
 
     assert result["questions"][1].validation_status == "failed"
     assert any(warning.startswith("reverse ") for warning in result["warnings"])
-    assert len(model.prompts) == 5
+    assert len(model.prompts) == 7
 
 
 def test_targeted_retry_can_repair_drift_and_clear_warning():

@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from ..tool_contracts import DimensionDiagnosis
+from .knowledge_taxonomy import map_to_standard_code, normalize_answer_structure
 
 MAX_QUESTIONS = 500
 MAX_ANSWERS = 2000
@@ -35,7 +36,7 @@ def _marking_questions(questions):
         if depth > 16:
             raise ValueError("题目嵌套过深")
         count += 1
-        answers = question.get("answers")
+        answers = normalize_answer_structure(question)
         children = question.get("children")
         answers = [] if answers is None else answers
         children = [] if children is None else children
@@ -46,7 +47,7 @@ def _marking_questions(questions):
         answer_count += len(answers)
         if count + len(pending) + len(children) > MAX_QUESTIONS or answer_count > MAX_ANSWERS:
             raise DiagnosisResourceLimit("批改结果过大")
-        yield question
+        yield dict(question, answers=answers)
         pending.extend((child, depth + 1) for child in reversed(children))
 
 
@@ -92,7 +93,16 @@ def diagnose_four_dimensions(questions: list[dict]) -> dict:
         raise DiagnosisResourceLimit("题目数量异常")
 
     evidence = {dimension: {} for dimension, _, _ in DIMENSIONS}
+    knowledge_points = {}
     for question in _marking_questions(questions):
+        for answer in question.get('answers', []):
+            points = answer.get('knowledgePoints') or []
+            if not isinstance(points, list):
+                raise ValueError('考点必须为数组')
+            for raw_tag in points:
+                if isinstance(raw_tag, str) and raw_tag.strip():
+                    code, name = map_to_standard_code(raw_tag)
+                    knowledge_points.setdefault(code, {'code': code, 'standardName': name})
         item = _answer_evidence(question)
         if item is None:
             continue
@@ -119,4 +129,5 @@ def diagnose_four_dimensions(questions: list[dict]) -> dict:
     return {
         "dimensions": diagnoses,
         "markdown": _markdown_card(diagnoses, evidence),
+        "knowledgePoints": list(knowledge_points.values()),
     }

@@ -15,7 +15,7 @@ from starlette.responses import JSONResponse
 
 from .analysis import collect_weak_points
 from .services.four_dimension_diagnosis import DiagnosisResourceLimit, diagnose_four_dimensions
-from .materials import MaterialPdfIn, _normalize_options
+from .materials import MaterialPdfIn, _normalize_options, QUALITY_GATE_MESSAGE
 from .marking.models import normalize_qwen_result
 from .pdf import render_training_pdf
 from .marking.symbolic import check_answer as compare_answers
@@ -258,9 +258,11 @@ def create_mcp_server() -> FastMCP:
     @server.tool()
     def analyze_weak_points(questions: list[dict], threshold: float = 0.8) -> dict:
         """Aggregate normalized answers by knowledge point and sort by accuracy."""
-        if len(questions) > MAX_PDF_QUESTIONS:
-            return _tool_error("RESOURCE_LIMIT", "题目数量超过 500 道", can_retry=False)
         try:
+            if not isinstance(questions, list):
+                raise ValueError('题目必须为数组')
+            if len(questions) > MAX_PDF_QUESTIONS:
+                return _tool_error("RESOURCE_LIMIT", "题目数量超过 500 道", can_retry=False)
             return {
                 "threshold": threshold,
                 "weakPoints": collect_weak_points(questions, threshold),
@@ -288,20 +290,24 @@ def create_mcp_server() -> FastMCP:
 
     @server.tool()
     def generate_practice_pdf(
-        sections: list[dict],
+        sections: list[dict] | None = None,
         title: str = "专项练习卷",
         course: str = "",
         meta: str = "",
         includeAnswers: bool = False,
         includeAnalysis: bool = False,
+        groups: list[dict] | None = None,
+        problems: list[dict] | None = None,
+        questions: list[dict] | None = None,
     ) -> dict:
         """Render a practice paper and return its PDF as base64 for DuMate."""
-        raw_size = len(json.dumps(sections, ensure_ascii=False, default=str))
+        entries = next((value for value in (sections, groups, problems, questions) if value is not None), [])
+        raw_size = len(json.dumps(entries, ensure_ascii=False, default=str))
         if raw_size > MAX_PDF_TEXT_CHARS:
             return _tool_error("RESOURCE_LIMIT", "题卷文本超过 1 MB 限制", can_retry=False)
         try:
             body = MaterialPdfIn(
-                sections=sections,
+                sections=entries,
                 title=title,
                 course=course,
                 meta=meta,
@@ -310,11 +316,15 @@ def create_mcp_server() -> FastMCP:
             )
         except (ValidationError, TypeError, ValueError):
             return _tool_error("PARSE_FAILED", "题卷数据格式无效", can_retry=False)
+        candidate_total = sum(len(section.questions) for section in body.sections)
+        if candidate_total > MAX_PDF_QUESTIONS:
+            return _tool_error("RESOURCE_LIMIT", "题目数量超过 500 道", can_retry=False)
+        if candidate_total == 0:
+            return _tool_error("PARSE_FAILED", "专项卷没有任何题目", can_retry=False)
+        body = body.approved_sections()
         total = sum(len(section.questions) for section in body.sections)
         if total == 0:
-            return _tool_error("PARSE_FAILED", "专项卷没有任何题目", can_retry=False)
-        if total > MAX_PDF_QUESTIONS:
-            return _tool_error("RESOURCE_LIMIT", "题目数量超过 500 道", can_retry=False)
+            return _tool_error("PARSE_FAILED", QUALITY_GATE_MESSAGE, can_retry=False)
 
         groups = []
         for section in body.sections:

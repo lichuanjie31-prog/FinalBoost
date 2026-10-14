@@ -265,6 +265,96 @@ def _check_worker(connection, args):
         connection.close()
 
 
+_MATH_CHUNK = re.compile(r"[A-Za-z0-9_\\{}().+*/^=\- \t]+")
+
+
+def _equalities(text):
+    """Extract bounded ASCII math runs without interpreting surrounding prose."""
+    for old, new in ((r'\(', ''), (r'\)', ''), (r'\[', ''), (r'\]', ''),
+                     ('＝', '='), ('−', '-'), ('×', '*'), ('÷', '/')):
+        text = text.replace(old, new)
+    text = re.sub(r'√\s*(?=\()', 'sqrt', text)
+    text = re.sub(r'√\s*([A-Za-z]|\d+(?:\.\d+)?)', r'sqrt(\1)', text)
+    for chunk in _MATH_CHUNK.findall(text):
+        parts = chunk.strip().split("=")
+        for left, right in zip(parts, parts[1:]):
+            try:
+                yield _parse_expression(left.strip()), _parse_expression(right.strip())
+            except (ValueError, SyntaxError, TypeError):
+                continue
+
+
+def _independent_evidence_unbounded(stem, analysis):
+    contradictory_step = any(
+        not left.free_symbols and not right.free_symbols
+        and _check_answer_unbounded("", str(left), str(right))["verdict"] == "wrong"
+        for left, right in _equalities(analysis)
+    )
+    expected = None
+    uncertain = False
+    # An explicitly known equation followed by a different requested quantity
+    # is a condition, so its variable solution is not the requested answer.
+    solve_request = re.search(r"(?:解(?:下列|下述|这个)?(?:方程)?|求(?:方程|等式).{0,20}解)", stem)
+    known_condition = re.search(r'已知.*=.*[，,].*求', stem)
+    if solve_request or not known_condition:
+        equations = list(_equalities(stem))
+        if equations and (solve_request or len(equations) == 1):
+            left, right = equations[0]
+            symbols = left.free_symbols | right.free_symbols
+            if len(symbols) == 1:
+                variable = next(iter(symbols))
+                solutions = sympy.solveset(sympy.Eq(left, right), variable, domain=sympy.S.Reals)
+                for extra_left, extra_right in equations[1:]:
+                    if extra_left.free_symbols | extra_right.free_symbols <= {variable}:
+                        solutions = sympy.Intersection(solutions, sympy.solveset(
+                            sympy.Eq(extra_left, extra_right), variable, domain=sympy.S.Reals))
+                if isinstance(solutions, sympy.FiniteSet):
+                    if len(solutions) == 1:
+                        expected = str(next(iter(solutions)))
+                    else:
+                        expected = "{" + ",".join(str(value) for value in solutions) + "}"
+                elif solutions == sympy.EmptySet:
+                    expected = "{}"
+            uncertain = expected is None
+        elif equations:
+            uncertain = True
+    if expected is None:
+        match = re.search(r"(?:计算|求值|求.{0,5}的值)\s*[:：]?\s*([A-Za-z0-9_\\{}().+*/^\- \t]+)", stem)
+        if match:
+            try:
+                value = _parse_expression(match.group(1).strip())
+                if not value.free_symbols:
+                    expected = str(sympy.simplify(value))
+            except (ValueError, SyntaxError, TypeError):
+                pass
+    return {"expected": expected, "contradictory_step": contradictory_step,
+            "uncertain": uncertain and expected is None}
+
+
+def _evidence_worker(connection, stem, analysis):
+    try:
+        connection.send(_independent_evidence_unbounded(stem, analysis))
+    except BaseException:
+        connection.send({"expected": None, "contradictory_step": False, "uncertain": True})
+    finally:
+        connection.close()
+
+
+def independent_math_evidence(stem, analysis):
+    """Solve recognizable real equations and check arithmetic under a hard bound."""
+    parent, child = multiprocessing.Pipe(duplex=False)
+    process = multiprocessing.Process(target=_evidence_worker, args=(child, stem, analysis))
+    process.start()
+    child.close()
+    completed = _wait_for_worker(process)
+    try:
+        if completed and parent.poll():
+            return parent.recv()
+        return {"expected": None, "contradictory_step": False, "uncertain": True}
+    finally:
+        parent.close()
+
+
 def _process_cpu_seconds(process):
     """Read child user plus kernel CPU time without counting idle waits."""
     if os.name == "nt":

@@ -439,7 +439,7 @@ def test_variation_missing_model_returns_explicit_service_error(monkeypatch):
 def test_variation_invalid_generated_questions_are_an_explicit_parse_error():
     from test_variation_generation import SequenceModel
     result = mcp_bridge._generate_variation_payload(
-        "解方程 x+1=3", "一元一次方程", model=SequenceModel(["invalid"] * 6))
+        "解方程 x+1=3", "一元一次方程", model=SequenceModel(["invalid"] * 9))
     assert result["error_code"] == "PARSE_FAILED"
     assert all(question["validation_status"] == "failed"
                for question in result["fallback_payload"]["questions"])
@@ -452,7 +452,7 @@ def test_variation_invalid_generated_questions_are_an_explicit_parse_error():
 def test_variation_provider_failure_keeps_its_business_error(exception, code):
     from test_variation_generation import SequenceModel
     result = mcp_bridge._generate_variation_payload(
-        "解方程 x+1=3", "一元一次方程", model=SequenceModel([exception] * 6))
+        "解方程 x+1=3", "一元一次方程", model=SequenceModel([exception] * 9))
     assert result["error_code"] == code
     assert result["can_retry"] is True
     assert "private" not in str(result)
@@ -464,6 +464,6 @@ def test_variation_openai_timeout_keeps_the_timeout_error():
     from test_variation_generation import SequenceModel
     timeout = APITimeoutError(request=httpx.Request("POST", "https://example.test"))
     result = mcp_bridge._generate_variation_payload(
-        "解方程 x+1=3", "一元一次方程", model=SequenceModel([timeout] * 6))
+        "解方程 x+1=3", "一元一次方程", model=SequenceModel([timeout] * 9))
     assert result["error_code"] == "TIMEOUT"
     assert "example.test" not in str(result)
