@@ -1,6 +1,8 @@
 """Three-tier question generation through the configured backend LLM."""
 import json
 import re
+import time
+from concurrent.futures import ThreadPoolExecutor, wait
 
 from pydantic import ValidationError
 from openai import APITimeoutError
@@ -37,7 +39,8 @@ tier 固定为 {tier}，source_knowledge_point 固定为 {json.dumps(knowledge_p
 
 
 def generate_variation_questions(llm_client, source_question: str,
-                                 source_knowledge_point: str) -> dict:
+                                 source_knowledge_point: str, *, parallel=False,
+                                 budget_seconds=105) -> dict:
     """Generate each tier in at most three rounds, retaining rejected evidence."""
     if llm_client is None:
         return {"questions": [], "warnings": ["后端模型未配置，未生成题目"]}
@@ -46,6 +49,35 @@ def generate_variation_questions(llm_client, source_question: str,
 
     generated = []
     provider_errors = {}
+    deadline = time.monotonic() + budget_seconds
+
+    def request_round(requests):
+        if not parallel:
+            return [(index, fetch(index, feedback)) for index, feedback in requests]
+        executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix='practice')
+        try:
+            futures = {executor.submit(fetch, index, feedback): index for index, feedback in requests}
+            done, pending = wait(futures, timeout=max(0, deadline - time.monotonic()))
+            result = [(futures[future], future.result()) for future in done]
+            for future in pending:
+                future.cancel()
+                provider_errors[_TIERS[futures[future]][0]] = 'TIMEOUT'
+                result.append((futures[future], None))
+            return result
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
+
+    def fetch(index, feedback):
+        if time.monotonic() >= deadline:
+            provider_errors[_TIERS[index][0]] = 'TIMEOUT'
+            return None
+        tier, label, direction = _TIERS[index]
+        try:
+            response = invoke(_prompt(tier, label, direction, source_question,
+                                      source_knowledge_point, feedback), tier)
+            return _parse_question(response.content, tier, source_knowledge_point)
+        except Exception:
+            return None
 
     def invoke(prompt, tier):
         try:
@@ -59,17 +91,9 @@ def generate_variation_questions(llm_client, source_question: str,
         provider_errors.pop(tier, None)
         return response
 
-    for tier, label, direction in _TIERS:
-        candidate = None
-        try:
-            response = invoke(_prompt(
-                tier, label, direction, source_question, source_knowledge_point,
-            ), tier)
-            candidate = _parse_question(response.content, tier, source_knowledge_point)
-        except Exception:
-            # Provider and parse failures use the same bounded correction
-            # correction path and remain failed if no valid question arrives.
-            pass
+    candidates = dict(request_round([(index, '') for index in range(3)]))
+    for index, (tier, label, direction) in enumerate(_TIERS):
+        candidate = candidates.get(index)
         if candidate is None:
             candidate = VariationQuestion(
                 tier=tier,
@@ -88,17 +112,13 @@ def generate_variation_questions(llm_client, source_question: str,
                   if item.validation_status == "failed"]
         if not failed:
             break
-        for index, item in failed:
-            tier, label, direction = _TIERS[index]
-            try:
-                response = invoke(_prompt(
-                    tier, label, direction, source_question, source_knowledge_point,
-                    validation_reason(item),
-                ), tier)
-                generated[index] = _parse_question(response.content, tier, source_knowledge_point)
-            except Exception:
-                # Preserve rejected evidence when correction cannot complete.
-                pass
+        if time.monotonic() >= deadline:
+            for index, _item in failed:
+                provider_errors[_TIERS[index][0]] = 'TIMEOUT'
+            break
+        for index, candidate in request_round([(index, validation_reason(item)) for index, item in failed]):
+            if candidate is not None:
+                generated[index] = candidate
         generated = validate_variations(generated)
     warnings = []
     for item in generated:

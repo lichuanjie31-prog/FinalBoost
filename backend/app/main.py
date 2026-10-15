@@ -16,6 +16,7 @@ from .business import router as business_router
 from .modules.question_banks.router import router as question_banks_router
 from .training import router as training_router
 from .analysis import router as analysis_router
+from .services.practice_artifacts import router as practice_artifacts_router
 from .materials import router as materials_router
 
 from .grading import GradingWorker
@@ -189,6 +190,7 @@ def create_app(**kwargs):
     app.include_router(training_router)
     app.include_router(analysis_router)
     app.include_router(materials_router)
+    app.include_router(practice_artifacts_router)
     app.mount("/mcp", create_mcp_app(app.state.mcp_server))
     return app
 

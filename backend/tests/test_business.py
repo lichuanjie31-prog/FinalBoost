@@ -118,7 +118,10 @@ def test_upload_validation_and_idempotency(tmp_path):
 
 @pytest.mark.parametrize('scenario,code', [('unreadable',42201),('provider_error',50201),('timeout',50401)])
 def test_failures_reach_terminal_and_retry_creates_new_job(tmp_path,scenario,code):
-    with client_for(tmp_path,mock_scenario=scenario,job_seconds=.04,job_timeout=.1) as c:
+    # Provider errors must be observed before their deadline; otherwise a busy
+    # CI scheduler tests the timeout path instead. Keep that path explicit.
+    timeout = .1 if scenario == 'timeout' else 2
+    with client_for(tmp_path,mock_scenario=scenario,job_seconds=.04,job_timeout=timeout) as c:
         auth,exam,file=setup_exam(c)
         body={"examId":exam["examId"],"fileIds":[file["fileId"]]}
         gid=post(c,"/grading",body,auth).json()["data"]["gradingId"]

@@ -221,7 +221,7 @@ def test_mcp_variation_tool_maps_worker_timeout_to_standard_error(monkeypatch):
 
     assert result["is_error"] is True
     assert result["error_code"] == "TIMEOUT"
-    assert result["can_retry"] is True
+    assert result["can_retry"] is False
     assert calls[0][0] == "generate_variations"
     assert calls[0][2] == mcp_bridge.VARIATION_GENERATION_TIMEOUT_SECONDS
 
@@ -430,7 +430,7 @@ def test_isolated_worker_preserves_parse_failure_semantics():
 
 
 def test_variation_missing_model_returns_explicit_service_error(monkeypatch):
-    monkeypatch.setattr(mcp_bridge, "create_llm_from_settings", lambda _: None)
+    monkeypatch.setattr(mcp_bridge, "create_llm_from_settings", lambda _, **kwargs: None)
     result = mcp_bridge._generate_variation_payload("解方程 x+1=3", "一元一次方程")
     assert result["error_code"] == "SERVICE_DEGRADED"
     assert result["is_error"] is True

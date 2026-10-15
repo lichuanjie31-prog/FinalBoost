@@ -116,7 +116,7 @@ def test_marking_aliases_preserve_id_stem_and_false_judgement():
 
 
 def test_option_dict_aliases_and_unlabelled_strings():
-    body = MaterialPdfIn(sections=[{"questions": [{"options": [
+    body = MaterialPdfIn(sections=[{"questions": [{"stem": "选择正确结果", "options": [
         "2", "B. 3", {"label": "C", "content": "4"}, {"key": "D", "value": "5"}]}]}])
     assert body.sections[0].questions[0].options == [
         {"key": "A", "text": "2"}, {"key": "B", "text": "3"},

@@ -8,7 +8,7 @@ from langchain_openai import ChatOpenAI
 
 def create_llm(api_key: str, model: str, base_url: str,
                temperature: float = 0.3, max_tokens: int = 2000,
-               timeout: float = 60) -> ChatOpenAI:
+               timeout: float = 60, max_retries: int = 2) -> ChatOpenAI:
     """Create a LangChain ChatOpenAI instance.
 
     Args:
@@ -29,7 +29,7 @@ def create_llm(api_key: str, model: str, base_url: str,
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=timeout,
-        max_retries=2,
+        max_retries=max_retries,
     )
 
 
@@ -56,7 +56,7 @@ def describe_model_failure(exc: BaseException) -> str:
     return GENERIC_MODEL_FAILURE
 
 
-def create_llm_from_settings(settings) -> ChatOpenAI | None:
+def create_llm_from_settings(settings, *, timeout=None, max_retries=2, max_tokens=2000) -> ChatOpenAI | None:
     """Create LLM from application settings.
 
     Returns None if no API key is configured (mock mode).
@@ -67,5 +67,7 @@ def create_llm_from_settings(settings) -> ChatOpenAI | None:
         api_key=settings.llm_api_key,
         model=settings.llm_model,
         base_url=settings.llm_base_url,
-        timeout=settings.llm_timeout,
+        timeout=settings.llm_timeout if timeout is None else timeout,
+        max_retries=max_retries,
+        max_tokens=max_tokens,
     )

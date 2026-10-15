@@ -4,6 +4,13 @@ from html import escape
 import os
 import re
 from pathlib import Path
+from io import BytesIO
+from pypdf import PdfReader
+from reportlab import rl_config
+
+# The reported delivered file contained invalid ASCII85 streams. Prefer a
+# standard binary Flate stream and transfer the complete file unchanged.
+rl_config.useA85 = False
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
@@ -99,6 +106,8 @@ def sanitize_math_text(text: str) -> str:
     for old, new in (('<=', '≤'), ('>=', '≥'), ('!=', '≠')):
         text = text.replace(old, new)
     text = re.sub(r'\^\{([^{}]+)\}', r'^(\1)', text)
+    text = re.sub(r'(?<![A-Za-z_])pi(?![A-Za-z_])', 'π', text)
+    text = re.sub(r'sqrt\(([^()]+)\)', r'√(\1)', text)
     return text.replace('$', '')
 
 
@@ -106,6 +115,31 @@ def _safe_text(value):
     """Escape untrusted content for ReportLab Paragraph's XML-like markup."""
     text = sanitize_math_text("" if value is None else str(value))
     return escape(text, quote=False).replace("\n", "<br/>")
+
+
+def verify_pdf_bytes(data: bytes, expected_stems=()):
+    """Decode every stream and prove expected question text survived rendering."""
+    if not data.startswith(b'%PDF-') or not data.rstrip().endswith(b'%%EOF'):
+        raise ValueError('PDF 文件头或结尾不完整')
+    try:
+        reader = PdfReader(BytesIO(data), strict=True)
+        if not reader.pages:
+            raise ValueError('PDF 没有页面')
+        texts = []
+        for page in reader.pages:
+            if page.get_contents() is not None:
+                page.get_contents().get_data()
+            texts.append(page.extract_text() or '')
+        flat = re.sub(r'\s+', '', '\n'.join(texts))
+        if not flat:
+            raise ValueError('PDF 没有可读文字')
+        for stem in expected_stems:
+            expected = re.sub(r'\s+', '', sanitize_math_text(stem))
+            if not expected or expected not in flat:
+                raise ValueError('PDF 中缺少完整题干，已阻断空白试卷')
+        return len(reader.pages)
+    except Exception as exc:
+        raise ValueError('PDF 内容流损坏或题目不完整') from exc
 
 
 def _styles(font_name):
@@ -141,6 +175,9 @@ def render_training_pdf(path, title, meta, groups, include_answers=False, includ
 
     The signature is shared by training exports and the materials API.
     """
+    stems = [question.get('content', '') for _, questions in groups for question in questions]
+    if not stems or any(not re.sub(r'[\s\u200b\ufeff]', '', stem) for stem in stems):
+        raise ValueError('禁止渲染没有题干的试卷')
     style = _styles(FONT_NAME)
     story = [
         Spacer(1, 5 * mm),
@@ -190,6 +227,7 @@ def render_training_pdf(path, title, meta, groups, include_answers=False, includ
     output_path.parent.mkdir(parents=True, exist_ok=True)
     document = SimpleDocTemplate(str(output_path), pagesize=A4, rightMargin=20 * mm,
                                  leftMargin=20 * mm, topMargin=17 * mm, bottomMargin=17 * mm,
-                                 title=str(title or "专项练习卷"), author="FinalBoost")
+                                 title=str(title or "专项练习卷"), author="FinalBoost", pageCompression=1)
     document.build(story)
+    verify_pdf_bytes(output_path.read_bytes(), stems)
     return output_path

@@ -21,12 +21,20 @@ router = APIRouter(prefix='/api/v1/materials', tags=['materials'])
 
 
 class MaterialQuestion(BaseModel):
-    stem: str = Field(default='', validation_alias=AliasChoices('stem', 'content', 'question', 'text'))
+    stem: str = Field(min_length=1, validation_alias=AliasChoices('stem', 'content', 'question', 'text'))
     type: str = ''
     options: list[dict] = []
     answer: str = ''
     analysis: str = ''
     validation_status: Literal['passed', 'failed', 'pending'] = 'passed'
+
+    @field_validator('stem')
+    @classmethod
+    def require_visible_stem(cls, value):
+        value = re.sub('[\u200b\u200c\u200d\ufeff]', '', value).strip()
+        if not value:
+            raise ValueError('题干不能为空或只有不可见字符')
+        return value
 
     @model_validator(mode='before')
     @classmethod

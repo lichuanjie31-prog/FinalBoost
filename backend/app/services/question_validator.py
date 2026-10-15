@@ -56,7 +56,7 @@ def _duplicate_similarity(left: VariationQuestion, right: VariationQuestion) -> 
     return SequenceMatcher(None, first, second).ratio()
 
 
-def validate_variations(questions: list[VariationQuestion]) -> list[VariationQuestion]:
+def validate_variations(questions: list[VariationQuestion], *, verified_answers=None) -> list[VariationQuestion]:
     """Set contract status from evidence; unsupported math stays pending."""
     checked = []
     for item in questions:
@@ -64,6 +64,10 @@ def validate_variations(questions: list[VariationQuestion]) -> list[VariationQue
         reason = None
         verdict = _answer_verdict(item)
         evidence = independent_math_evidence(item.stem, item.analysis)
+        # Only server-side mathematical solvers supply these references. They
+        # are never accepted from the MCP question payload or its status flag.
+        if verified_answers and item.stem in verified_answers:
+            evidence = dict(evidence, expected=verified_answers[item.stem], uncertain=False)
         independent_verdict = "uncertain"
         if evidence["expected"] is not None:
             answer = re.sub(r"^[A-Za-z]\s*=\s*", "", _option_expression(item, item.answer).strip())
