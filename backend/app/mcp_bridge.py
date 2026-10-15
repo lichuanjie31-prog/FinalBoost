@@ -127,7 +127,10 @@ def _markdown_paper(body):
     for section in body.sections:
         lines.extend(["", f"## {section.knowledgePoint or body.course or '专项'}", ""])
         for index, question in enumerate(section.questions, 1):
-            lines.extend([f"### 第 {index} 题", "", question.stem])
+            heading = question.question_title or f"第 {index} 题"
+            lines.extend([f"### {heading}", "", question.stem])
+            if question.requirement:
+                lines.extend(["", f"【要求】{question.requirement}"])
             for option in _normalize_options(question.options):
                 lines.append(f"{option['key']}. {option['text']}")
             if body.includeAnswers and question.answer:
@@ -370,6 +373,9 @@ def create_mcp_server() -> FastMCP:
             items = [
                 {
                     "content": question.stem,
+                    "question_title": question.question_title,
+                    "tier": question.tier,
+                    "requirement": question.requirement,
                     "options": _normalize_options(question.options),
                     "answer": question.answer,
                     "analysis": question.analysis,
@@ -386,7 +392,11 @@ def create_mcp_server() -> FastMCP:
             render_args = {
                 "path": path,
                 "title": body.title,
-                "meta": body.meta or f"{body.course} · 共 {total} 题",
+                "meta": body.meta or (
+                    f"针对考点：{'、'.join(section.knowledgePoint for section in body.sections if section.knowledgePoint)} · 共 {total} 题"
+                    if any(section.knowledgePoint for section in body.sections)
+                    else f"{body.course} · 共 {total} 题"
+                ),
                 "groups": groups,
                 "include_answers": body.includeAnswers,
                 "include_analysis": body.includeAnalysis,

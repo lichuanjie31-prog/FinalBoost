@@ -22,6 +22,11 @@ router = APIRouter(prefix='/api/v1/materials', tags=['materials'])
 
 class MaterialQuestion(BaseModel):
     stem: str = Field(min_length=1, validation_alias=AliasChoices('stem', 'content', 'question', 'text'))
+    question_title: str = Field(default='', validation_alias=AliasChoices(
+        'question_title', 'questionTitle', 'title'))
+    tier: str = ''
+    requirement: str = Field(default='', validation_alias=AliasChoices(
+        'requirement', 'requirements', 'instruction'))
     type: str = ''
     options: list[dict] = []
     answer: str = ''
@@ -146,13 +151,19 @@ def material_pdf(body: MaterialPdfIn, _=Depends(service_token_guard)):
     for section in body.sections:
         items = [{
             'content': question.stem,
+            'question_title': question.question_title,
+            'tier': question.tier,
+            'requirement': question.requirement,
             'options': _normalize_options(question.options),
             'answer': question.answer,
             'analysis': question.analysis,
         } for question in section.questions]
         groups.append((section.knowledgePoint or body.course or '专项', items))
 
-    meta = body.meta or f"{body.course} · 共 {total} 题"
+    knowledge_points = '、'.join(section.knowledgePoint for section in body.sections
+                                 if section.knowledgePoint)
+    meta = body.meta or (f"针对考点：{knowledge_points} · 共 {total} 题"
+                         if knowledge_points else f"{body.course} · 共 {total} 题")
     handle = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False)
     handle.close()
     render_training_pdf(handle.name, body.title, meta, groups,

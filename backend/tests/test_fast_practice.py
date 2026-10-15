@@ -72,7 +72,8 @@ def test_source_to_three_question_pdf_finishes_under_three_minutes():
     texts = [p.extract_text() for p in reader.pages]
     assert len(reader.pages) >= 2
     student = '\n'.join(t for t in texts if '参考答案与名师解析' not in t)
-    assert all(f'第 {i} 题' in student for i in (1, 2, 3))
+    assert all(title in student for title in (
+        '第一题：同构巩固（原题考点对应）', '第二题：逆向检验', '第三题：综合拓展'))
     assert '辅助角' in student
     assert '参考答案与名师解析' in '\n'.join(texts)
 
@@ -186,7 +187,7 @@ def test_practice_model_disables_hidden_retries(monkeypatch):
 
 def test_solver_formulas_are_readable_in_pdf_text():
     from app.pdf import sanitize_math_text
-    assert sanitize_math_text('5pi/6 + sqrt(3)') == '5π⁄6 + √(3)'
+    assert sanitize_math_text('5pi/6 + sqrt(3)') == '5π / 6 + √(3)'
 
 
 def test_artifact_storage_failure_is_structured(monkeypatch):

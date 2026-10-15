@@ -52,7 +52,8 @@ def test_probe_3_variation_options_and_dumate_pdf_have_separate_answers(alias):
     if alias:
         section = {"sectionTitle": "一元一次方程", "problems": [{
             "content": question.stem, "options": question.options,
-            "answer": "2", "analysis": question.analysis, "validationStatus": "passed"}]}
+            "answer": "2", "analysis": question.analysis, "tier": question.tier,
+            "validationStatus": "passed"}]}
     else:
         section = {"knowledgePoint": "一元一次方程", "questions": [question.model_dump()]}
     result = tool("generate_practice_pdf")(sections=[section], includeAnswers=True, includeAnalysis=True)
@@ -63,8 +64,10 @@ def test_probe_3_variation_options_and_dumate_pdf_have_separate_answers(alias):
     back = "\n".join(page.extract_text() for page in reader.pages[1:])
     assert "参考答案" not in front and "最终答案" not in front
     assert "A. 2" in front and "B. 3" in front
+    assert "第一题：同构巩固（原题考点对应）" in front
+    assert "【要求】" in front
     assert "参考答案与名师解析" in back
-    assert "最终答案:2" in back
+    assert "最终答案：2" in back
 
 
 def test_probe_4_flat_wrong_answers_cluster_by_standard_code():
@@ -149,7 +152,7 @@ def test_three_generation_rounds_can_repair_second_retry():
 def test_math_sanitizer_handles_nested_fraction_and_commands():
     from app.pdf import sanitize_math_text
     assert sanitize_math_text(r"bb(R) \mathbb{R} infinity \infty") == "ℝ ℝ ∞ ∞"
-    assert sanitize_math_text(r"\frac{1+\sqrt{x}}{2} <= \pi") == "(1 + √(x))⁄(2) ≤ π"
+    assert sanitize_math_text(r"\frac{1+\sqrt{x}}{2} <= \pi") == "(1 + √(x)) / (2) ≤ π"
     assert sanitize_math_text(r"\alpha \beta \gamma \theta \lambda \Delta \in \cup \cap \subset \neq \ge") == "α β γ θ λ Δ ∈ ∪ ∩ ⊂ ≠ ≥"
 
 

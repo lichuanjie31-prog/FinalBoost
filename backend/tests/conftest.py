@@ -8,6 +8,15 @@
 `create_app(llm_api_key=...)` / `client_for(..., marking_mode='fixture', dashscope_api_key=...)`。
 """
 import os
+import sys
+
+# Windows 默认的 Proactor 事件循环在 AnyIO 启动 TestClient 时会卡在内部
+# socketpair 的 accept 上，令整套测试静默挂起。测试进程里统一改用 Selector
+# 循环（本套件没有依赖 asyncio 子进程的用例），保证 `pytest` 直接可跑。
+if sys.platform == "win32":
+    import asyncio
+
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 os.environ["LLM_API_KEY"] = ""
 os.environ["DASHSCOPE_API_KEY"] = ""

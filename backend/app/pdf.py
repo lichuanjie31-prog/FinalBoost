@@ -79,6 +79,12 @@ _SUPERSCRIPTS = dict(zip(
     "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖᑫʳˢᵗᵘᵛʷˣʸᶻ",
 ))
 _SUBSCRIPTS = dict(zip("0123456789+-=()aehiklmnoprstx", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢₖₗₘₙₒₚᵣₛₜₓ"))
+_CHINESE_NUMERALS = "零一二三四五六七八九十"
+_VARIATION_TITLES = {
+    "consolidation": "同构巩固（原题考点对应）",
+    "reverse": "逆向检验",
+    "extension": "综合拓展",
+}
 
 
 def _group_at(source, start):
@@ -137,7 +143,7 @@ def _replace_fractions(source):
             cursor = next_start
             continue
         bottom, end = denominator
-        rendered = '(' + sanitize_math_text(top) + ')⁄(' + sanitize_math_text(bottom) + ')'
+        rendered = '(' + sanitize_math_text(top) + ') / (' + sanitize_math_text(bottom) + ')'
         source = source[:match.start()] + rendered + source[end:]
         cursor = match.start() + len(rendered)
     return source
@@ -202,7 +208,7 @@ def sanitize_math_text(text: str) -> str:
     text = re.sub(r'\|\|([^|]+)\|\|', r'∥\1∥', text)
     text = _replace_scripts(text)
     text = text.replace('*', ' · ')
-    text = re.sub(r'(?<=[\w)])/(?=\w)', '⁄', text)
+    text = re.sub(r'(?<=[\w)])\s*/\s*(?=\w|\()', ' / ', text)
     text = re.sub(r'\s*·\s*', ' · ', text)
     text = re.sub(r'(?<![\w)])-(?=\d)', '−', text)
     text = re.sub(r'(?<=\w)\+(?=[\w(√])', ' + ', text)
@@ -223,6 +229,15 @@ def _protect_scripts(text):
             index += 1
             continue
         marker = text[index]
+        if marker == '_':
+            previous = text[index - 1] if index else ''
+            following = text[index + 1]
+            previous_is_math_atom = previous.isalnum() or previous in ')]}'
+            following_is_script = following == '{' or following.isalnum() or following in '+-='
+            if not (previous_is_math_atom and following_is_script):
+                output.append(marker)
+                index += 1
+                continue
         if text[index + 1] == '{':
             grouped = _group_at(text, index + 1)
             if not grouped:
@@ -242,16 +257,17 @@ def _protect_scripts(text):
 
 def _safe_text(value):
     """Escape text and put mathematical runs in the bundled math font."""
-    source = ("" if value is None else str(value)).translate(_PUNCTUATION_TRANSLATION)
+    source = "" if value is None else str(value)
     protected, placeholders = _protect_scripts(source)
     text = sanitize_math_text(protected)
-    runs = re.split(r'([\u3400-\u9fff\uf900-\ufaff\u3000-\u303f]+)', text)
+    cjk_run = r'[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f\uff00-\uff65]+'
+    runs = re.split(r'(' + cjk_run + r')', text)
     rendered = []
     for run in runs:
         if not run:
             continue
         safe = escape(run, quote=False).replace("\n", "<br/>")
-        if re.fullmatch(r'[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f]+', run):
+        if re.fullmatch(cjk_run, run):
             rendered.append(safe)
         else:
             for token, markup in placeholders.items():
@@ -275,7 +291,7 @@ def _text_for_pdf_match(value):
 class AnswerArea(Flowable):
     """A ruled work area that gives students room to solve each question."""
 
-    def __init__(self, height=38 * mm, guide_count=5):
+    def __init__(self, height=31 * mm, guide_count=5):
         super().__init__()
         self.height = height
         self.guide_count = guide_count
@@ -332,13 +348,15 @@ def _styles(font_name):
                                 spaceAfter=8),
         "meta": ParagraphStyle("PaperMeta", fontName=font_name, fontSize=9.5,
                                leading=16, alignment=TA_CENTER, textColor=colors.HexColor("#586575")),
+        "requirement": ParagraphStyle("QuestionRequirement", fontName=font_name, fontSize=9,
+                                      leading=13, textColor=colors.HexColor("#626D78")),
         "weak": ParagraphStyle("WeakPoint", fontName=font_name, fontSize=10,
                                leading=16, textColor=colors.HexColor("#7A3E00")),
         "section": ParagraphStyle("Section", fontName=font_name, fontSize=14,
                                    leading=20, textColor=colors.HexColor("#17324D"),
                                    spaceBefore=10, spaceAfter=7),
-        "question": ParagraphStyle("Question", fontName=font_name, fontSize=11,
-                                    leading=19, textColor=colors.HexColor("#202B38"),
+        "question": ParagraphStyle("Question", fontName=font_name, fontSize=10.5,
+                                    leading=16, textColor=colors.HexColor("#202B38"),
                                     spaceAfter=6),
         "option": ParagraphStyle("Option", fontName=font_name, fontSize=10,
                                   leading=15, leftIndent=12, textColor=colors.HexColor("#364152"),
@@ -351,6 +369,55 @@ def _styles(font_name):
         "footer": ParagraphStyle("Footer", fontName=font_name, fontSize=8,
                                   leading=12, alignment=TA_CENTER, textColor=colors.HexColor("#9AA3AD")),
     }
+
+
+def _chinese_question_title(index, question):
+    explicit = question.get('question_title') or question.get('title')
+    if explicit:
+        return str(explicit)
+    tier = str(question.get('tier') or '').strip().lower()
+    label = _VARIATION_TITLES.get(tier)
+    if label is None:
+        label = next((value for key, value in _VARIATION_TITLES.items()
+                      if key in tier or value in str(question.get('tier') or '')), None)
+    if label is None:
+        return f'第 {index} 题'
+    if index < len(_CHINESE_NUMERALS):
+        numeral = _CHINESE_NUMERALS[index]
+    elif index < 20:
+        numeral = '十' + _CHINESE_NUMERALS[index - 10] if index > 10 else '十'
+    else:
+        numeral = str(index)
+    return f'第{numeral}题：{label}'
+
+
+def _default_requirement(question, stage_label):
+    supplied = question.get('requirement') or question.get('instruction')
+    if supplied:
+        return str(supplied)
+    tier = str(question.get('tier') or '').strip().lower()
+    subject_context = f"{stage_label} {question.get('content', '')}"
+    if tier in ('consolidation', '同构巩固') and any(
+            term in subject_context for term in ('三角', '辅助角', '凑角', 'sin', 'cos', '正弦', '余弦')):
+        return '写明辅助角公式的化简过程、凑角步骤及符号判断依据。'
+    if tier in ('reverse', '逆向反思', '逆向检验'):
+        return '写出由结论反推的过程，并说明结合定义域或已知条件筛选的依据。'
+    if tier in ('extension', '综合拓展'):
+        return '写出关键公式和推导步骤，并说明结论成立的条件。'
+    return '请写出关键推导过程，并说明所用公式及适用条件。'
+
+
+def _requirement_box(text, style, width):
+    box = Table([[Paragraph('<b>【要求】</b> ' + _safe_text(text), style['requirement'])]],
+                colWidths=[width])
+    box.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F2F4F6')),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    return box
 
 
 def render_training_pdf(path, title, meta, groups, include_answers=False, include_analysis=False):
@@ -389,16 +456,27 @@ def render_training_pdf(path, title, meta, groups, include_answers=False, includ
         for question in questions:
             index = len(numbered) + 1
             numbered.append((index, question))
-            block = [Paragraph(f"<b>第 {index} 题</b>　<span color='#7A8795'>[考点：{_safe_text(stage_label or '专项')} ]</span><br/>{_safe_text(question.get('content', ''))}", style["question"])]
+            question_title = _chinese_question_title(index, question)
+            block = [Paragraph(
+                f"<b>{_safe_text(question_title)}</b>　"
+                f"<span color='#7A8795'>[考点：{_safe_text(stage_label or '专项')} ]</span><br/>"
+                f"{_safe_text(question.get('content', ''))}", style["question"])]
             from .materials import _normalize_options
             for option_index, option in enumerate(_normalize_options(question.get('options'))):
                 label = chr(65 + option_index % 26)
                 block.append(Paragraph(f"{label}. {_safe_text(option['text'])}", style["option"]))
-            story.append(KeepTogether(block + [AnswerArea(height=38 * mm)]))
+            requirement = _default_requirement(question, stage_label)
+            block.extend([
+                _requirement_box(requirement, style, 170 * mm),
+                Spacer(1, 2 * mm),
+                AnswerArea(height=31 * mm, guide_count=5),
+            ])
+            story.append(KeepTogether(block))
     if include_answers or include_analysis:
         story.extend([PageBreak(), Paragraph('【参考答案与名师解析】', style['title']), Spacer(1, 5 * mm)])
         for index, question in numbered:
-            block = [Paragraph(f'第 {index} 题', style['section'])]
+            block = [Paragraph(f"<b>{_safe_text(_chinese_question_title(index, question))}</b>",
+                               style['section'])]
             if include_answers:
                 block.append(Paragraph('【参考答案】 ' + _safe_text(question.get('answer', '')), style['answer']))
             if include_analysis:
