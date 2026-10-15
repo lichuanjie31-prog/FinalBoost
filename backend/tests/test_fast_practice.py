@@ -186,7 +186,7 @@ def test_practice_model_disables_hidden_retries(monkeypatch):
 
 def test_solver_formulas_are_readable_in_pdf_text():
     from app.pdf import sanitize_math_text
-    assert sanitize_math_text('5pi/6 + sqrt(3)') == '5π/6 + √(3)'
+    assert sanitize_math_text('5pi/6 + sqrt(3)') == '5π⁄6 + √(3)'
 
 
 def test_artifact_storage_failure_is_structured(monkeypatch):

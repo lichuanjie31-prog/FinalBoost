@@ -21,6 +21,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase.cidfonts import UnicodeCIDFont
 from reportlab.platypus import (
+    Flowable,
     HRFlowable,
     KeepTogether,
     PageBreak,
@@ -34,6 +35,12 @@ from reportlab.platypus import (
 
 FONT_PATH = "/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc"
 FONT_NAME = "Helvetica"
+MATH_FONT_NAME = "STIXMath"
+MATH_FONT_PATH = Path(__file__).parent / "assets" / "fonts" / "STIXTwoMath-Regular.ttf"
+_PUNCTUATION_TRANSLATION = str.maketrans({
+    '，': ',', '。': '.', '；': ';', '：': ':', '、': ',',
+    '（': '(', '）': ')', '　': ' ', '．': '.',
+})
 
 if os.path.exists(FONT_PATH):
     try:
@@ -62,59 +69,234 @@ if FONT_NAME == 'Helvetica':
         pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
         FONT_NAME = 'STSong-Light'
 
+# The bundled SIL OFL math face guarantees the symbol repertoire on Windows
+# and Linux, independent of whichever CJK font is installed on the host.
+pdfmetrics.registerFont(TTFont(MATH_FONT_NAME, str(MATH_FONT_PATH)))
 
-def sanitize_math_text(text: str) -> str:
-    """Convert common LaTeX/Typst remnants into readable plain math text."""
-    text = str(text or '')
-    def group_at(source, start):
-        if start >= len(source) or source[start] != '{':
-            return None
-        depth = 0
-        for index in range(start, len(source)):
-            depth += (source[index] == '{') - (source[index] == '}')
-            if depth == 0:
-                return source[start + 1:index], index + 1
+
+_SUPERSCRIPTS = dict(zip(
+    "0123456789+-=()abcdefghijklmnopqrstuvwxyz",
+    "⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻⁼⁽⁾ᵃᵇᶜᵈᵉᶠᵍʰⁱʲᵏˡᵐⁿᵒᵖᑫʳˢᵗᵘᵛʷˣʸᶻ",
+))
+_SUBSCRIPTS = dict(zip("0123456789+-=()aehiklmnoprstx", "₀₁₂₃₄₅₆₇₈₉₊₋₌₍₎ₐₑₕᵢₖₗₘₙₒₚᵣₛₜₓ"))
+
+
+def _group_at(source, start):
+    if start >= len(source) or source[start] != '{':
         return None
+    depth = 0
+    for index in range(start, len(source)):
+        depth += (source[index] == '{') - (source[index] == '}')
+        if depth == 0:
+            return source[start + 1:index], index + 1
+    return None
 
-    command = re.compile(r'\\(?:dfrac|tfrac|frac|sqrt)\s*')
+
+def _replace_group_commands(source):
+    replacements = {
+        'mathbb': lambda value: ''.join({'N': 'ℕ', 'Z': 'ℤ', 'Q': 'ℚ', 'R': 'ℝ', 'C': 'ℂ'}.get(c, c) for c in value),
+        'widehat': lambda value: '⌒' + value,
+        'overline': lambda value: ''.join(char + '\u0305' for char in value),
+        'bar': lambda value: ''.join(char + '\u0305' for char in value),
+        'vec': lambda value: value + '\u20d7',
+        'overrightarrow': lambda value: value + '\u20d7',
+        'sqrt': lambda value: '√(' + value + ')',
+        'operatorname': lambda value: value,
+        'mathrm': lambda value: value,
+        'text': lambda value: value,
+    }
+    for command, replacement in replacements.items():
+        pattern = re.compile(r'\\' + command + r'\s*')
+        cursor = 0
+        while match := pattern.search(source, cursor):
+            grouped = _group_at(source, match.end())
+            if grouped:
+                value, end = grouped
+            else:
+                value, end = source[match.end():match.end() + 1], match.end() + 1
+                if not value:
+                    cursor = match.end()
+                    continue
+            rendered = replacement(value)
+            source = source[:match.start()] + rendered + source[end:]
+            cursor = match.start() + len(rendered)
+    return source
+
+
+def _replace_fractions(source):
+    pattern = re.compile(r'\\(?:dfrac|tfrac|frac)\s*')
     cursor = 0
-    while match := command.search(text, cursor):
-        first = group_at(text, match.end())
-        if not first:
+    while match := pattern.search(source, cursor):
+        numerator = _group_at(source, match.end())
+        if not numerator:
             cursor = match.end()
             continue
-        inner, end = first
-        if match.group().strip() == r'\sqrt':
-            replacement = '√(' + sanitize_math_text(inner) + ')'
-        else:
-            second = group_at(text, end)
-            if not second:
-                cursor = end
+        top, next_start = numerator
+        denominator = _group_at(source, next_start)
+        if not denominator:
+            cursor = next_start
+            continue
+        bottom, end = denominator
+        rendered = '(' + sanitize_math_text(top) + ')⁄(' + sanitize_math_text(bottom) + ')'
+        source = source[:match.start()] + rendered + source[end:]
+        cursor = match.start() + len(rendered)
+    return source
+
+
+def _replace_scripts(source):
+    for marker, mapping in (('^', _SUPERSCRIPTS), ('_', _SUBSCRIPTS)):
+        cursor = 0
+        while True:
+            index = source.find(marker, cursor)
+            if index < 0:
+                break
+            if index + 1 < len(source) and source[index + 1] == '{':
+                grouped = _group_at(source, index + 1)
+                if not grouped:
+                    cursor = index + 1
+                    continue
+                value, end = grouped
+            elif index + 1 < len(source):
+                value, end = source[index + 1], index + 2
+            else:
+                cursor = index + 1
                 continue
-            denominator, end = second
-            replacement = '(' + sanitize_math_text(inner) + ')/(' + sanitize_math_text(denominator) + ')'
-        text = text[:match.start()] + replacement + text[end:]
-        cursor = match.start() + len(replacement)
-    text = re.sub(r'bb\(R\)|\\mathbb\{R\}', 'R（实数集）', text)
-    text = re.sub(r'\binfinity\b', '∞', text)
-    replacements = {'infty': '∞', 'le': '≤', 'leq': '≤', 'ge': '≥', 'geq': '≥',
-                    'neq': '≠', 'ne': '≠', 'alpha': 'α', 'beta': 'β', 'gamma': 'γ',
-                    'theta': 'θ', 'pi': 'π', 'lambda': 'λ', 'Delta': 'Δ', 'in': '∈',
-                    'cup': '∪', 'cap': '∩', 'subset': '⊂', 'cdot': '·', 'times': '×',
-                    'div': '÷', 'left': '', 'right': ''}
+            if value and all(char in mapping for char in value):
+                rendered = ''.join(mapping[char] for char in value)
+                source = source[:index] + rendered + source[end:]
+                cursor = index + len(rendered)
+            else:
+                cursor = end
+    return source
+
+
+def sanitize_math_text(text: str) -> str:
+    """Convert common LaTeX and plain math notation into printable Unicode."""
+    text = str(text or '').replace(r'\{', '{').replace(r'\}', '}').replace(r'\|', '∥')
+    text = re.sub(r'\\not\s*\\(?:in|ni)\b', '∉', text)
+    text = re.sub(r'\\not\s*\\subseteq\b', '⊈', text)
+    replacements = {
+        'infty': '∞', 'le': '≤', 'leq': '≤', 'ge': '≥', 'geq': '≥',
+        'neq': '≠', 'ne': '≠', 'nleq': '≰', 'ngeq': '≱', 'nsubseteq': '⊈',
+        'notin': '∉', 'notni': '∌', 'alpha': 'α', 'beta': 'β', 'gamma': 'γ',
+        'theta': 'θ', 'lambda': 'λ', 'pi': 'π', 'Delta': 'Δ', 'in': '∈', 'ni': '∋',
+        'cup': '∪', 'cap': '∩', 'subset': '⊂', 'supset': '⊃', 'subseteq': '⊆',
+        'supseteq': '⊇', 'emptyset': '∅', 'varnothing': '∅', 'forall': '∀',
+        'exists': '∃', 'Rightarrow': '⇒', 'Longrightarrow': '⇒',
+        'Leftrightarrow': '⇔', 'Longleftrightarrow': '⇔', 'implies': '⇒',
+        'iff': '⇔', 'complement': '∁', 'parallel': '∥', 'perp': '⊥', 'angle': '∠',
+        'int': '∫', 'cdot': '·', 'times': '×', 'div': '÷', 'approx': '≈',
+        'equiv': '≡', 'pm': '±', 'mp': '∓', 'left': '', 'right': '',
+        'log': 'log', 'lg': 'lg', 'ln': 'ln', 'lim': 'lim', 'max': 'max', 'min': 'min',
+    }
     text = re.sub(r'\\([A-Za-z]+)', lambda match: replacements.get(match.group(1), match.group(0)), text)
+    text = _replace_group_commands(text)
+    text = _replace_fractions(text)
+    text = re.sub(r'bb\(R\)', 'ℝ', text)
+    text = re.sub(r'\\binfinity\b|\\infinity\b', '∞', text)
+    text = re.sub(r'\binfinity\b', '∞', text)
     for old, new in (('<=', '≤'), ('>=', '≥'), ('!=', '≠')):
         text = text.replace(old, new)
-    text = re.sub(r'\^\{([^{}]+)\}', r'^(\1)', text)
     text = re.sub(r'(?<![A-Za-z_])pi(?![A-Za-z_])', 'π', text)
     text = re.sub(r'sqrt\(([^()]+)\)', r'√(\1)', text)
-    return text.replace('$', '')
+    text = re.sub(r'\|\|([^|]+)\|\|', r'∥\1∥', text)
+    text = _replace_scripts(text)
+    text = text.replace('*', ' · ')
+    text = re.sub(r'(?<=[\w)])/(?=\w)', '⁄', text)
+    text = re.sub(r'\s*·\s*', ' · ', text)
+    text = re.sub(r'(?<![\w)])-(?=\d)', '−', text)
+    text = re.sub(r'(?<=\w)\+(?=[\w(√])', ' + ', text)
+    text = re.sub(r'(?<=\w)-(?=[\w(√])', ' − ', text)
+    text = re.sub(r'\s*(≤|≥|≠|=|<|>)\s*', r' \1 ', text)
+    text = re.sub(r',(?=\S)', ', ', text)
+    return re.sub(r' {2,}', ' ', text.replace('$', '').replace(r'\,', ' ').replace(r'\;', ' ')).strip()
+
+
+def _protect_scripts(text):
+    """Replace TeX scripts with safe placeholders for real baseline shifts."""
+    placeholders = {}
+    output = []
+    index = 0
+    while index < len(text):
+        if text[index] not in '^_' or index + 1 >= len(text):
+            output.append(text[index])
+            index += 1
+            continue
+        marker = text[index]
+        if text[index + 1] == '{':
+            grouped = _group_at(text, index + 1)
+            if not grouped:
+                output.append(marker)
+                index += 1
+                continue
+            value, end = grouped
+        else:
+            value, end = text[index + 1], index + 2
+        token = f'\ue100{len(placeholders)}\ue101'
+        tag = 'super' if marker == '^' else 'sub'
+        placeholders[token] = f'<{tag}>{escape(sanitize_math_text(value), quote=False)}</{tag}>'
+        output.append(token)
+        index = end
+    return ''.join(output), placeholders
 
 
 def _safe_text(value):
-    """Escape untrusted content for ReportLab Paragraph's XML-like markup."""
-    text = sanitize_math_text("" if value is None else str(value))
-    return escape(text, quote=False).replace("\n", "<br/>")
+    """Escape text and put mathematical runs in the bundled math font."""
+    source = ("" if value is None else str(value)).translate(_PUNCTUATION_TRANSLATION)
+    protected, placeholders = _protect_scripts(source)
+    text = sanitize_math_text(protected)
+    runs = re.split(r'([\u3400-\u9fff\uf900-\ufaff\u3000-\u303f]+)', text)
+    rendered = []
+    for run in runs:
+        if not run:
+            continue
+        safe = escape(run, quote=False).replace("\n", "<br/>")
+        if re.fullmatch(r'[\u3400-\u9fff\uf900-\ufaff\u3000-\u303f]+', run):
+            rendered.append(safe)
+        else:
+            for token, markup in placeholders.items():
+                safe = safe.replace(escape(token, quote=False), markup)
+            rendered.append(f'<font name="{MATH_FONT_NAME}">{safe}</font>')
+    return ''.join(rendered)
+
+
+def _text_for_pdf_match(value):
+    text = sanitize_math_text(str(value).translate(_PUNCTUATION_TRANSLATION))
+    text = text.replace('−', '-')
+    script_glyphs = {
+        **{glyph: plain for plain, glyph in _SUPERSCRIPTS.items()},
+        **{glyph: plain for plain, glyph in _SUBSCRIPTS.items()},
+    }
+    text = text.translate(str.maketrans(script_glyphs))
+    text = re.sub(r'[\u3000-\u303f\uff00-\uff65]', '', text)
+    return re.sub(r'[\s\x00_\^{}]+', '', text)
+
+
+class AnswerArea(Flowable):
+    """A ruled work area that gives students room to solve each question."""
+
+    def __init__(self, height=38 * mm, guide_count=5):
+        super().__init__()
+        self.height = height
+        self.guide_count = guide_count
+        self.width = 0
+
+    def wrap(self, availWidth, availHeight):
+        self.width = availWidth
+        return self.width, self.height
+
+    def draw(self):
+        self.canv.saveState()
+        self.canv.setStrokeColor(colors.HexColor('#D5DDE5'))
+        self.canv.setLineWidth(0.45)
+        step = self.height / (self.guide_count + 0.5)
+        for index in range(self.guide_count):
+            y = self.height - (index + 0.65) * step
+            self.canv.line(15 * mm, y, self.width, y)
+        self.canv.setFillColor(colors.HexColor('#8A96A3'))
+        self.canv.setFont(FONT_NAME, 7.5)
+        self.canv.drawString(0, self.height - step * 0.65 - 1, '作答区')
+        self.canv.restoreState()
 
 
 def verify_pdf_bytes(data: bytes, expected_stems=()):
@@ -134,8 +316,9 @@ def verify_pdf_bytes(data: bytes, expected_stems=()):
         if not flat:
             raise ValueError('PDF 没有可读文字')
         for stem in expected_stems:
-            expected = re.sub(r'\s+', '', sanitize_math_text(stem))
-            if not expected or expected not in flat:
+            expected = _text_for_pdf_match(stem)
+            readable_pdf_text = _text_for_pdf_match(flat)
+            if not expected or expected not in readable_pdf_text:
                 raise ValueError('PDF 中缺少完整题干，已阻断空白试卷')
         return len(reader.pages)
     except Exception as exc:
@@ -155,8 +338,8 @@ def _styles(font_name):
                                    leading=20, textColor=colors.HexColor("#17324D"),
                                    spaceBefore=10, spaceAfter=7),
         "question": ParagraphStyle("Question", fontName=font_name, fontSize=11,
-                                    leading=17, textColor=colors.HexColor("#202B38"),
-                                    spaceAfter=4),
+                                    leading=19, textColor=colors.HexColor("#202B38"),
+                                    spaceAfter=6),
         "option": ParagraphStyle("Option", fontName=font_name, fontSize=10,
                                   leading=15, leftIndent=12, textColor=colors.HexColor("#364152"),
                                   spaceAfter=2),
@@ -211,7 +394,7 @@ def render_training_pdf(path, title, meta, groups, include_answers=False, includ
             for option_index, option in enumerate(_normalize_options(question.get('options'))):
                 label = chr(65 + option_index % 26)
                 block.append(Paragraph(f"{label}. {_safe_text(option['text'])}", style["option"]))
-            story.extend([KeepTogether(block), Spacer(1, 15 * mm)])
+            story.append(KeepTogether(block + [AnswerArea(height=38 * mm)]))
     if include_answers or include_analysis:
         story.extend([PageBreak(), Paragraph('【参考答案与名师解析】', style['title']), Spacer(1, 5 * mm)])
         for index, question in numbered:
