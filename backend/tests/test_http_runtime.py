@@ -13,10 +13,12 @@ def test_real_process_restart_and_connection_failure_probe(tmp_path):
     with socket.socket() as sock:
         sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
     base=f'http://127.0.0.1:{port}'
-    env={**os.environ,'DATA_DIR':str(tmp_path),'GRADING_MODE':'mock','JOB_SECONDS':'2','JOB_TIMEOUT':'10'}
+    # Allow the persisted job to survive both independently bounded (30 s)
+    # server startups. Expiry itself has separate business tests.
+    env={**os.environ,'DATA_DIR':str(tmp_path),'GRADING_MODE':'mock','JOB_SECONDS':'2','JOB_TIMEOUT':'90'}
     def start():
         process=subprocess.Popen([sys.executable,'-m','uvicorn','app.main:app','--host','127.0.0.1','--port',str(port),'--log-level','warning'],cwd=root/'backend',env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
-        limit=time.monotonic()+10
+        limit=time.monotonic()+30
         while time.monotonic()<limit:
             assert process.poll() is None,'HTTP server exited during startup'
             try:

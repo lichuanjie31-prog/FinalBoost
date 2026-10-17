@@ -195,9 +195,9 @@ def qwen_judgement(value, *, has_stem, has_answer):
     """
     if not (has_stem and has_answer):
         return None
-    if value == 'correct':
+    if value is True or value == 'correct':
         return True
-    if value == 'incorrect':
+    if value is False or value in ('incorrect', 'wrong'):
         return False
     return None
 
@@ -220,14 +220,22 @@ def normalize_qwen_result(payload):
         count += 1
         if count > MAX_QWEN_QUESTIONS:
             raise ValueError('题目数量异常')
-        text = _text(item.get('question_text'))
+        path = _text(next((item[key] for key in ('id', 'question_id', 'questionNumber', 'questionId')
+                           if key in item), '')) or path
+        text = _text(next((item[key] for key in ('question_text', 'text', 'stem', 'content')
+                          if key in item), ''))
         student = _text(item.get('student_answer'))
         right = _text(item.get('correct_answer'))
         if text or student or right:
             substantive += 1
         confidence = _confidence(item.get('confidence'))
-        correct = qwen_judgement(item.get('judgement'), has_stem=bool(text), has_answer=bool(student))
-        points = [_text(p) for p in (item.get('knowledge_points') or []) if _text(p)]
+        judgement = next((item[key] for key in ('judgement', 'correct', 'is_correct', 'verdict')
+                          if key in item), None)
+        correct = qwen_judgement(judgement, has_stem=bool(text), has_answer=bool(student))
+        raw_points = item.get('knowledge_points', item.get('knowledgePoints', [])) or []
+        if not isinstance(raw_points, list):
+            raise ValueError('考点必须为数组')
+        points = [_text(p) for p in raw_points if _text(p)]
         answers = [{
             'answerId': f'{path}.a1',
             'handwriting': student,

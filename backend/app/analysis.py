@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict
 
 from .common import envelope, fail
 from .service_auth import service_token_guard
+from .services.knowledge_taxonomy import map_to_standard_code, normalize_answer_structure
+import math
 
 router = APIRouter(prefix='/api/v1/analysis', tags=['analysis'])
 
@@ -24,19 +26,40 @@ class WeakPointIn(BaseModel):
 
 
 def collect_weak_points(questions, threshold):
+    if not isinstance(questions, list) or not 0 <= threshold <= 1:
+        raise ValueError('薄弱点参数无效')
     stats = {}
     for index, question in enumerate(questions, 1):
-        question_id = str(question.get('questionId') or index)
-        for answer in question.get('answers') or []:
+        answers = normalize_answer_structure(question)
+        question_id = str(question.get('questionId') or question.get('question_id') or question.get('id') or index)
+        for answer in answers:
             correct = answer.get('correct')
             # 未判定既不算对也不算错：不进入任何分母，避免把识别失败当成薄弱点。
-            if correct is None:
+            if type(correct) is not bool:
                 continue
-            for point in answer.get('knowledgePoints') or []:
+            points = answer.get('knowledgePoints', answer.get('knowledge_points', [])) or []
+            if not isinstance(points, list):
+                raise ValueError('考点必须为数组')
+            codes = set()
+            for point in points:
                 name = str(point).strip()
                 if not name:
                     continue
-                bucket = stats.setdefault(name, {'correct': 0, 'wrong': 0, 'questionIds': []})
+                code, standard = map_to_standard_code(name)
+                if code in codes:
+                    continue
+                codes.add(code)
+                bucket = stats.setdefault(code, {'name': standard, 'correct': 0, 'wrong': 0,
+                                                'questionIds': [], 'scores': [], 'maxScores': [],
+                                                'completeScores': True})
+                score, max_score = answer.get('score'), answer.get('maxScore')
+                scored = (type(score) in (int, float) and type(max_score) in (int, float)
+                          and math.isfinite(score) and math.isfinite(max_score)
+                          and 0 <= score <= max_score and max_score > 0)
+                bucket['completeScores'] &= scored
+                if scored:
+                    bucket['scores'].append(score)
+                    bucket['maxScores'].append(max_score)
                 if correct is True:
                     bucket['correct'] += 1
                 else:
@@ -45,17 +68,25 @@ def collect_weak_points(questions, threshold):
                         bucket['questionIds'].append(question_id)
 
     weak = []
-    for name, bucket in stats.items():
+    for code, bucket in stats.items():
         total = bucket['correct'] + bucket['wrong']
         if total == 0:
             continue
         accuracy = bucket['correct'] / total
         if accuracy < threshold:
             weak.append({
-                'knowledgePoint': name,
+                'knowledgePoint': bucket['name'],
+                'code': code,
+                'standardName': bucket['name'],
                 'wrongCount': bucket['wrong'],
                 'correctCount': bucket['correct'],
                 'accuracy': round(accuracy, 4),
+                'accuracyRate': round(accuracy, 4),
+                'errorRate': round(1 - accuracy, 4),
+                'totalScore': sum(bucket['scores']) if bucket['completeScores'] else None,
+                'maxScore': sum(bucket['maxScores']) if bucket['completeScores'] else None,
+                'scoreLossRate': round(1 - sum(bucket['scores']) / sum(bucket['maxScores']), 4)
+                if bucket['completeScores'] else None,
                 'questionIds': bucket['questionIds'],
             })
     # 最薄弱（正确率最低）排前面；同正确率时错得多的排前面。
